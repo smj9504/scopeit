@@ -67,6 +67,7 @@ import { lineItemService } from '@/services/lineItemService';
 import { settingsService } from '@/services/settingsService';
 import { useInvoiceStatuses, getStatusDisplay } from '@/hooks/useSettings';
 import { useIsMobile, useIsNarrow } from '@/hooks/useIsMobile';
+import { useBackNav } from '@/hooks/useHeaderNav';
 import { MobileLineItemDrawer, MobileLineItemCard } from '@/components/common/MobileLineItemDrawer';
 import { PdfPreviewModal } from '@/components/features/PdfPreviewModal';
 import type { InvoiceStatus, InvoiceCreate, InvoiceUpdate, Invoice, LineItem, PdfTemplateInfo, PdfTemplateId } from '@/types/entities';
@@ -931,6 +932,8 @@ const InvoiceEditorPage: React.FC = () => {
   const isEditing = Boolean(id);
   const isMobile = useIsMobile();
 
+  useBackNav('Back to Invoices', '/app/invoices');
+
   // Fetch invoice statuses
   const { data: statusConfigs } = useInvoiceStatuses();
 
@@ -1462,14 +1465,6 @@ const InvoiceEditorPage: React.FC = () => {
   if (isEditing && !isLoadingInvoice && !invoiceData) {
     return (
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/app/invoices')}
-          style={{ marginBottom: 16, padding: 0, color: colors.textSecondary }}
-        >
-          Back to Invoices
-        </Button>
         <Card style={{ textAlign: 'center', padding: 48 }}>
           <h2 style={{ fontFamily: fonts.heading, marginBottom: 16 }}>Invoice Not Found</h2>
           <p style={{ color: colors.textSecondary, marginBottom: 24 }}>
@@ -1487,15 +1482,6 @@ const InvoiceEditorPage: React.FC = () => {
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/app/invoices')}
-          style={{ marginBottom: 16, padding: 0, color: colors.textSecondary }}
-        >
-          Back to Invoices
-        </Button>
-
         <div style={{
           display: 'flex',
           flexDirection: isMobile ? 'column' : 'row',

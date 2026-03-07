@@ -68,6 +68,7 @@ import { lineItemService } from '@/services/lineItemService';
 import { estimateService } from '@/services/estimateService';
 import { settingsService } from '@/services/settingsService';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useBackNav } from '@/hooks/useHeaderNav';
 import { MobileLineItemDrawer, MobileLineItemCard } from '@/components/common/MobileLineItemDrawer';
 import { PdfPreviewModal } from '@/components/features/PdfPreviewModal';
 import type { LineItem, LineItemNote, PdfTemplateInfo, PdfTemplateId } from '@/types/entities';
@@ -976,6 +977,8 @@ const EstimateEditorPage: React.FC = () => {
   const isMobile = useIsMobile();
   const { message } = App.useApp();
 
+  useBackNav('Back to Estimates', '/app/estimates');
+
   // Form state
   const [customerData, setCustomerData] = useState<CustomerData>({
     customerId: undefined,
@@ -1502,14 +1505,6 @@ const EstimateEditorPage: React.FC = () => {
   if (isEditing && !isLoadingEstimate && !estimateData) {
     return (
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/app/estimates')}
-          style={{ marginBottom: 16, padding: 0, color: colors.textSecondary }}
-        >
-          Back to Estimates
-        </Button>
         <Card style={{ textAlign: 'center', padding: 48 }}>
           <h2 style={{ fontFamily: fonts.heading, marginBottom: 16 }}>Estimate Not Found</h2>
           <p style={{ color: colors.textSecondary, marginBottom: 24 }}>
@@ -1527,15 +1522,6 @@ const EstimateEditorPage: React.FC = () => {
     <div style={{ maxWidth: 1200, margin: '0 auto' }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/app/estimates')}
-          style={{ marginBottom: 16, padding: 0, color: colors.textSecondary }}
-        >
-          Back to Estimates
-        </Button>
-
         <div style={{
           display: 'flex',
           flexDirection: isMobile ? 'column' : 'row',

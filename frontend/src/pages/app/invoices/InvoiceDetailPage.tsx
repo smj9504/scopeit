@@ -27,6 +27,7 @@ import { colors, fonts } from '@/styles/theme';
 import { invoiceService } from '@/services/invoiceService';
 import { useInvoiceStatuses, getStatusDisplay } from '@/hooks/useSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useBackNav } from '@/hooks/useHeaderNav';
 import type { InvoiceStatus, PaymentMethod, Adjustment, Payment, PdfTemplateInfo } from '@/types/entities';
 import { ReceiptPreviewModal } from '@/components/features/ReceiptPreviewModal';
 
@@ -46,6 +47,8 @@ const InvoiceDetailPage: React.FC = () => {
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
+
+  useBackNav('Back to Invoices', '/app/invoices');
   const [receiptPreviewPayment, setReceiptPreviewPayment] = useState<Payment | null>(null);
   const [paymentForm] = Form.useForm();
   const [adjustmentForm] = Form.useForm();
@@ -443,15 +446,6 @@ const InvoiceDetailPage: React.FC = () => {
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/app/invoices')}
-          style={{ marginBottom: 16, padding: 0, color: colors.textSecondary }}
-        >
-          Back to Invoices
-        </Button>
-
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>

@@ -11,16 +11,18 @@ import {
   UserOutlined,
   UnorderedListOutlined,
   SettingOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
   LogoutOutlined,
   HomeOutlined,
   MenuOutlined,
   CloseOutlined,
   AppstoreOutlined,
+  ArrowLeftOutlined,
+  LeftOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/authStore';
 import { colors, fonts } from '@/styles/theme';
+import { HeaderNavProvider, useHeaderNav } from '@/hooks/useHeaderNav';
 
 const { Sider, Content, Header } = Layout;
 
@@ -43,6 +45,32 @@ const useIsMobile = () => {
   }, []);
 
   return isMobile;
+};
+
+// Back navigation button rendered in the header
+const HeaderBackNav: React.FC = () => {
+  const { backNav } = useHeaderNav();
+  const navigate = useNavigate();
+
+  if (!backNav) return null;
+
+  return (
+    <Button
+      type="text"
+      icon={<ArrowLeftOutlined />}
+      onClick={() => navigate(backNav.path)}
+      style={{
+        padding: '4px 8px',
+        color: colors.textSecondary,
+        fontSize: 14,
+        display: 'flex',
+        alignItems: 'center',
+        height: 36,
+      }}
+    >
+      {backNav.label}
+    </Button>
+  );
 };
 
 const AppLayout: React.FC = () => {
@@ -175,7 +203,7 @@ const AppLayout: React.FC = () => {
       {(!collapsed || isMobile) && (
         <div
           style={{
-            padding: '16px 24px 24px',
+            padding: '8px 24px 24px',
           }}
         >
           <Badge.Ribbon text="Beta" color={colors.primary}>
@@ -200,26 +228,63 @@ const AppLayout: React.FC = () => {
     <Layout style={{ minHeight: '100vh' }}>
       {/* Desktop Sidebar */}
       {!isMobile && (
-        <Sider
-          trigger={null}
-          collapsible
-          collapsed={collapsed}
-          width={240}
-          collapsedWidth={80}
-          style={{
-            background: colors.bgWhite,
-            borderRight: `1px solid ${colors.border}`,
-            position: 'fixed',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            zIndex: 100,
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <SidebarContent />
-        </Sider>
+        <div style={{ position: 'relative' }}>
+          <Sider
+            trigger={null}
+            collapsible
+            collapsed={collapsed}
+            width={240}
+            collapsedWidth={80}
+            style={{
+              background: colors.bgWhite,
+              borderRight: `1px solid ${colors.border}`,
+              position: 'fixed',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              zIndex: 100,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <SidebarContent />
+          </Sider>
+
+          {/* Edge toggle button */}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            style={{
+              position: 'fixed',
+              left: collapsed ? 80 - 12 : 240 - 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              zIndex: 101,
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              border: `1px solid ${colors.border}`,
+              background: colors.bgWhite,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+              transition: 'left 0.2s ease, background 0.15s ease',
+              color: colors.textSecondary,
+              fontSize: 10,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = colors.bgLight;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = colors.bgWhite;
+            }}
+          >
+            {collapsed ? <RightOutlined style={{ fontSize: 10 }} /> : <LeftOutlined style={{ fontSize: 10 }} />}
+          </button>
+        </div>
       )}
 
       {/* Mobile Drawer */}
@@ -274,128 +339,105 @@ const AppLayout: React.FC = () => {
       </Drawer>
 
       {/* Main Content */}
-      <Layout
-        style={{
-          marginLeft: isMobile ? 0 : collapsed ? 80 : 240,
-          transition: 'margin-left 0.2s ease',
-        }}
-      >
-        {/* Header */}
-        <Header
+      <HeaderNavProvider>
+        <Layout
           style={{
-            background: colors.bgWhite,
-            borderBottom: `1px solid ${colors.border}`,
-            padding: `env(safe-area-inset-top) ${isMobile ? 16 : 24}px 0 ${isMobile ? 16 : 24}px`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            position: 'sticky',
-            top: 0,
-            zIndex: 99,
-            height: 64,
+            marginLeft: isMobile ? 0 : collapsed ? 80 : 240,
+            transition: 'margin-left 0.2s ease',
           }}
         >
-          {/* Left side - Menu toggle */}
-          {isMobile ? (
-            <Button
-              type="text"
-              icon={<MenuOutlined />}
-              onClick={() => setMobileMenuOpen(true)}
-              style={{
-                fontSize: 18,
-                width: 44,
-                height: 44,
-              }}
-              aria-label="Open menu"
-            />
-          ) : (
-            <Button
-              type="text"
-              icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              style={{
-                fontSize: 16,
-                width: 40,
-                height: 40,
-              }}
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            />
-          )}
-
-          {/* Center - Logo on mobile */}
-          {isMobile && (
-            <Link to="/app/dashboard" style={{ textDecoration: 'none' }}>
-              <span
-                style={{
-                  fontFamily: fonts.heading,
-                  fontSize: 18,
-                  fontWeight: 700,
-                  color: colors.primary,
-                }}
-              >
-                ScopeIt
-              </span>
-            </Link>
-          )}
-
-          {/* Right side - User menu */}
-          <Dropdown menu={{ items: userMenuItems }} trigger={['click']}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: isMobile ? 8 : 12,
-                cursor: 'pointer',
-                padding: '8px 12px',
-                borderRadius: 8,
-                transition: 'background 0.2s ease',
-                minHeight: 44,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = colors.bgLight;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <Avatar
-                style={{
-                  background: colors.primary,
-                  color: colors.textWhite,
-                  width: isMobile ? 32 : 36,
-                  height: isMobile ? 32 : 36,
-                  lineHeight: isMobile ? '32px' : '36px',
-                }}
-              >
-                {user?.fullName?.charAt(0).toUpperCase() || 'U'}
-              </Avatar>
-              {!isMobile && (
-                <span
+          {/* Header */}
+          <Header
+            style={{
+              background: colors.bgWhite,
+              borderBottom: `1px solid ${colors.border}`,
+              padding: `env(safe-area-inset-top) ${isMobile ? 16 : 24}px 0 ${isMobile ? 16 : 24}px`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              position: 'sticky',
+              top: 0,
+              zIndex: 99,
+              height: 64,
+            }}
+          >
+            {/* Left side - Mobile menu toggle + Back navigation */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              {isMobile && (
+                <Button
+                  type="text"
+                  icon={<MenuOutlined />}
+                  onClick={() => setMobileMenuOpen(true)}
                   style={{
-                    fontWeight: 500,
-                    color: colors.textPrimary,
+                    fontSize: 18,
+                    width: 44,
+                    height: 44,
+                  }}
+                  aria-label="Open menu"
+                />
+              )}
+              <HeaderBackNav />
+            </div>
+
+            {/* Right side - User menu */}
+            <Dropdown menu={{ items: userMenuItems }} trigger={['click']}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: isMobile ? 8 : 12,
+                  cursor: 'pointer',
+                  padding: '8px 12px',
+                  borderRadius: 8,
+                  transition: 'background 0.2s ease',
+                  minHeight: 44,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = colors.bgLight;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
+              >
+                <Avatar
+                  style={{
+                    background: colors.primary,
+                    color: colors.textWhite,
+                    width: isMobile ? 32 : 36,
+                    height: isMobile ? 32 : 36,
+                    lineHeight: isMobile ? '32px' : '36px',
                   }}
                 >
-                  {user?.fullName || 'User'}
-                </span>
-              )}
-            </div>
-          </Dropdown>
-        </Header>
+                  {user?.fullName?.charAt(0).toUpperCase() || 'U'}
+                </Avatar>
+                {!isMobile && (
+                  <span
+                    style={{
+                      fontWeight: 500,
+                      color: colors.textPrimary,
+                    }}
+                  >
+                    {user?.fullName || 'User'}
+                  </span>
+                )}
+              </div>
+            </Dropdown>
+          </Header>
 
-        {/* Content */}
-        <Content
-          style={{
-            padding: isMobile ? 16 : 24,
-            minHeight: 'calc(100vh - 64px)',
-            background: colors.bgLight,
-            // Safe area for bottom notch
-            paddingBottom: isMobile ? 'calc(16px + env(safe-area-inset-bottom))' : 24,
-          }}
-        >
-          <Outlet />
-        </Content>
-      </Layout>
+          {/* Content */}
+          <Content
+            style={{
+              padding: isMobile ? 16 : 24,
+              minHeight: 'calc(100vh - 64px)',
+              background: colors.bgLight,
+              // Safe area for bottom notch
+              paddingBottom: isMobile ? 'calc(16px + env(safe-area-inset-bottom))' : 24,
+            }}
+          >
+            <Outlet />
+          </Content>
+        </Layout>
+      </HeaderNavProvider>
     </Layout>
   );
 };

@@ -5,11 +5,11 @@
 import React, { Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Spin, Button } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
 import { ToolAccessGate } from '@/components/features/tools/ToolAccessGate';
 import { getToolComponent } from '@/components/features/tools/registry';
 import { useTools } from '@/hooks/useTools';
-import { colors, fonts } from '@/styles/theme';
+import { useBackNav } from '@/hooks/useHeaderNav';
+import { fonts } from '@/styles/theme';
 
 const ToolWrapper: React.FC = () => {
   const { toolId } = useParams<{ toolId: string }>();
@@ -18,6 +18,8 @@ const ToolWrapper: React.FC = () => {
 
   const tool = tools?.find(t => t.id === toolId);
   const ToolComponent = toolId ? getToolComponent(toolId) : null;
+
+  useBackNav('Tools', '/app/tools');
 
   if (!toolId || !ToolComponent) {
     return (
@@ -31,17 +33,8 @@ const ToolWrapper: React.FC = () => {
   return (
     <ToolAccessGate toolId={toolId}>
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-          <Button
-            type="text"
-            icon={<ArrowLeftOutlined />}
-            onClick={() => navigate('/app/tools')}
-            style={{ padding: '4px 8px' }}
-          >
-            Tools
-          </Button>
-          <span style={{ color: colors.textMuted }}>/</span>
-          <span style={{ fontWeight: 600, fontFamily: fonts.heading }}>
+        <div style={{ marginBottom: 24 }}>
+          <span style={{ fontWeight: 600, fontFamily: fonts.heading, fontSize: 18 }}>
             {tool?.name ?? toolId}
           </span>
         </div>

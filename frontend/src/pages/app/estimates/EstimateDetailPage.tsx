@@ -28,6 +28,7 @@ import { colors, fonts } from '@/styles/theme';
 import { useEstimateStatuses, getStatusDisplay } from '@/hooks/useSettings';
 import { estimateService } from '@/services/estimateService';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useBackNav } from '@/hooks/useHeaderNav';
 import type { EstimateStatus, Adjustment, EstimatePayment } from '@/types/entities';
 
 const EstimateDetailPage: React.FC = () => {
@@ -40,6 +41,8 @@ const EstimateDetailPage: React.FC = () => {
   const [adjustmentForm] = Form.useForm();
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
+
+  useBackNav('Back to Estimates', '/app/estimates');
 
   // Fetch estimate data
   const { data: estimate, isLoading, error } = useQuery({
@@ -330,15 +333,6 @@ const EstimateDetailPage: React.FC = () => {
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/app/estimates')}
-          style={{ marginBottom: 16, padding: 0, color: colors.textSecondary }}
-        >
-          Back to Estimates
-        </Button>
-
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
