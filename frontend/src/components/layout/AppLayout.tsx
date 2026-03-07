@@ -17,6 +17,7 @@ import {
   HomeOutlined,
   MenuOutlined,
   CloseOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/authStore';
 import { colors, fonts } from '@/styles/theme';
@@ -82,6 +83,11 @@ const AppLayout: React.FC = () => {
       key: '/app/line-items',
       icon: <UnorderedListOutlined />,
       label: 'Line Items',
+    },
+    {
+      key: '/app/tools',
+      icon: <AppstoreOutlined />,
+      label: 'Tools',
     },
     {
       key: '/app/settings',

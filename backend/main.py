@@ -20,6 +20,11 @@ from app.domains.settings.models import (
     EstimateStatusConfig, InvoiceStatusConfig, LineItemCategory, LineItemUnit
 )
 from app.domains.admin.models import LoginLog, UserActivity
+from app.domains.tools.models import ToolSession, ToolFile
+
+# Import tool converters (registers them in the converter registry)
+import app.domains.tools.modules.roof_analyzer.converter  # noqa: F401
+import app.domains.tools.modules.packing.converter  # noqa: F401
 
 # Import routers
 from app.domains.auth.api import router as auth_router
@@ -31,6 +36,9 @@ from app.domains.invoice.api import router as invoice_router
 from app.domains.dashboard.api import router as dashboard_router
 from app.domains.settings.api import router as settings_router
 from app.domains.admin.api import router as admin_router
+from app.domains.tools.api import router as tools_router
+from app.domains.tools.modules.roof_analyzer.api import router as roof_analyzer_router
+from app.domains.tools.modules.packing.api import router as packing_router
 
 
 @asynccontextmanager
@@ -108,6 +116,9 @@ app.include_router(invoice_router, prefix="/api/invoices", tags=["Invoices"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(settings_router, prefix="/api/settings", tags=["Settings"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
+app.include_router(tools_router, prefix="/api/tools", tags=["Tools"])
+app.include_router(roof_analyzer_router, prefix="/api/tools/roof-analyzer", tags=["Roof Analyzer"])
+app.include_router(packing_router, prefix="/api/tools/packing", tags=["Packing Estimator"])
 
 
 if __name__ == "__main__":

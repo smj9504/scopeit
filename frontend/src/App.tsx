@@ -27,6 +27,8 @@ const InvoiceEditorPage = lazy(() => import('@/pages/app/invoices/InvoiceEditorP
 const CustomersListPage = lazy(() => import('@/pages/app/customers/CustomersListPage'));
 const LineItemsListPage = lazy(() => import('@/pages/app/line_items/LineItemsListPage'));
 const SettingsPage = lazy(() => import('@/pages/app/settings/SettingsPage'));
+const ToolsPage = lazy(() => import('@/pages/app/tools/ToolsPage'));
+const ToolWrapper = lazy(() => import('@/pages/app/tools/ToolWrapper'));
 
 // Admin pages (Superuser only)
 const AdminLayout = lazy(() => import('@/components/layout/AdminLayout'));
@@ -171,6 +173,10 @@ const App: React.FC = () => {
                 
                 {/* Line Items */}
                 <Route path="line-items" element={<LineItemsListPage />} />
+
+                {/* Tools */}
+                <Route path="tools" element={<ToolsPage />} />
+                <Route path="tools/:toolId" element={<ToolWrapper />} />
                 
                 {/* Settings */}
                 <Route path="settings/*" element={<SettingsPage />} />

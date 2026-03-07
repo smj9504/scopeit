@@ -1,0 +1,62 @@
+"""
+ScopeIt - Tool Registry
+
+Single source of truth for available tools.
+Adding a new tool = adding one entry to TOOL_REGISTRY.
+"""
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+
+@dataclass
+class ToolDefinition:
+    """Metadata for a single tool in the registry."""
+    id: str
+    name: str
+    description: str
+    icon: str
+    category: str
+    required_plan: str  # "free" | "pro" | "enterprise"
+    can_create_estimate: bool = False
+    version: str = "1.0.0"
+    is_active: bool = True
+    tags: List[str] = field(default_factory=list)
+
+
+TOOL_REGISTRY: Dict[str, ToolDefinition] = {
+    "roof_analyzer": ToolDefinition(
+        id="roof_analyzer",
+        name="Roof Analyzer",
+        description="Upload EagleView reports to visualize roof faces, calculate slopes, and estimate areas.",
+        icon="HomeOutlined",
+        category="Analysis",
+        required_plan="free",
+        can_create_estimate=True,
+        tags=["roofing", "eagleview", "measurements"],
+    ),
+    "packing": ToolDefinition(
+        id="packing",
+        name="Packing & Moving Estimator",
+        description="Estimate packing and moving costs based on room parameters or photo analysis.",
+        icon="InboxOutlined",
+        category="Estimation",
+        required_plan="free",
+        can_create_estimate=True,
+        tags=["moving", "packing", "contents"],
+    ),
+}
+
+
+def get_tool(tool_id: str) -> Optional[ToolDefinition]:
+    return TOOL_REGISTRY.get(tool_id)
+
+
+def get_all_tools(active_only: bool = True) -> List[ToolDefinition]:
+    tools = list(TOOL_REGISTRY.values())
+    if active_only:
+        tools = [t for t in tools if t.is_active]
+    return tools
+
+
+def tool_exists(tool_id: str) -> bool:
+    return tool_id in TOOL_REGISTRY

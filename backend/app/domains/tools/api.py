@@ -1,0 +1,299 @@
+"""
+ScopeIt - Tools API
+
+Registry, session management, and tool-to-estimate bridge endpoints.
+"""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import List, Optional
+from uuid import UUID
+from datetime import datetime
+
+from app.core.database import get_db
+from app.core.dependencies import get_current_user
+from app.domains.user.models import User
+from app.domains.tools.service import ToolAccessService, ToolSessionService
+from app.domains.tools.converter import get_converter
+from app.domains.tools.registry import get_tool
+from app.common.exceptions import NotFoundException, BadRequestException
+
+router = APIRouter()
+
+
+# ── Schemas ──────────────────────────────────────────────────────────
+
+class ToolResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    icon: str
+    category: str
+    required_plan: str
+    version: str
+    tags: List[str]
+    has_access: bool
+    can_create_estimate: bool
+
+
+class ToolSessionCreate(BaseModel):
+    tool_id: str
+    name: Optional[str] = None
+    data: Optional[dict] = {}
+
+
+class ToolSessionUpdate(BaseModel):
+    name: Optional[str] = None
+    data: Optional[dict] = None
+
+
+class ToolSessionResponse(BaseModel):
+    id: str
+    tool_id: str
+    name: Optional[str]
+    data: dict
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class CreateEstimateFromToolRequest(BaseModel):
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    title: Optional[str] = None
+
+
+class CreateEstimateFromToolResponse(BaseModel):
+    estimate_id: str
+    estimate_number: str
+
+
+# ── Tool Registry Endpoints ──────────────────────────────────────────
+
+@router.get("", response_model=List[ToolResponse])
+async def list_tools(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all tools with access status for the current user."""
+    service = ToolAccessService(db)
+    return service.get_all_tools_with_access(current_user)
+
+
+@router.get("/{tool_id}/access")
+async def check_tool_access(
+    tool_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Check if the current user can access a specific tool."""
+    service = ToolAccessService(db)
+    has_access = service.can_access_tool(tool_id, current_user)
+    return {"tool_id": tool_id, "has_access": has_access}
+
+
+# ── Session Endpoints ────────────────────────────────────────────────
+
+@router.get("/sessions", response_model=List[ToolSessionResponse])
+async def list_sessions(
+    tool_id: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List tool sessions for the current company."""
+    service = ToolSessionService(db)
+    return service.get_sessions(
+        company_id=current_user.company_id,
+        tool_id=tool_id,
+        skip=skip,
+        limit=limit,
+    )
+
+
+@router.post("/sessions", response_model=ToolSessionResponse, status_code=201)
+async def create_session(
+    data: ToolSessionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create a new tool session."""
+    access_service = ToolAccessService(db)
+    if not access_service.can_access_tool(data.tool_id, current_user):
+        raise HTTPException(status_code=403, detail="You do not have access to this tool.")
+
+    session_service = ToolSessionService(db)
+    return session_service.create_session(
+        company_id=current_user.company_id,
+        user_id=current_user.id,
+        tool_id=data.tool_id,
+        name=data.name,
+        data=data.data,
+    )
+
+
+@router.get("/sessions/{session_id}", response_model=ToolSessionResponse)
+async def get_session(
+    session_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = ToolSessionService(db)
+    return service.get_session(session_id, current_user.company_id)
+
+
+@router.patch("/sessions/{session_id}", response_model=ToolSessionResponse)
+async def update_session(
+    session_id: UUID,
+    data: ToolSessionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = ToolSessionService(db)
+    return service.update_session_data(
+        session_id, current_user.company_id,
+        name=data.name, data=data.data,
+    )
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(
+    session_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    service = ToolSessionService(db)
+    service.delete_session(session_id, current_user.company_id)
+    return {"message": "Session deleted"}
+
+
+# ── Tool → Estimate Bridge ──────────────────────────────────────────
+
+@router.post("/sessions/{session_id}/create-estimate", response_model=CreateEstimateFromToolResponse)
+async def create_estimate_from_tool(
+    session_id: UUID,
+    req: CreateEstimateFromToolRequest = CreateEstimateFromToolRequest(),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Convert a tool session's result data into a new estimate.
+    Uses the tool's registered converter to transform session data
+    into EstimateCreate payload, then reuses the existing estimate creation logic.
+    """
+    from app.domains.estimate.api import EstimateCreate, EstimateSectionCreate, EstimateItemCreate
+    from app.domains.estimate.models import Estimate, EstimateSection, EstimateItem, EstimateStatus
+    from app.domains.company.models import Company
+    from app.domains.customer.models import Customer
+    from app.domains.settings.models import EstimateStatusConfig
+    from decimal import Decimal
+    from datetime import date
+
+    # 1. Get tool session
+    session_service = ToolSessionService(db)
+    tool_session = session_service.get_session(session_id, current_user.company_id)
+
+    # 2. Get converter for this tool
+    converter = get_converter(tool_session.tool_id)
+    if not converter:
+        tool = get_tool(tool_session.tool_id)
+        tool_name = tool.name if tool else tool_session.tool_id
+        raise BadRequestException(f"{tool_name} does not support estimate creation yet.")
+
+    # 3. Convert session data to estimate payload
+    payload = converter.to_estimate_payload(
+        tool_session.data,
+        customer_id=req.customer_id,
+        customer_name=req.customer_name,
+        title=req.title,
+    )
+
+    # 4. Create estimate using existing logic (inline to avoid circular import)
+    company = db.query(Company).filter(Company.id == current_user.company_id).first()
+    estimate_number = f"{company.estimate_prefix}-{company.next_estimate_number}"
+    company.next_estimate_number += 1
+
+    customer_name = payload.get("customer_name") or req.customer_name
+    customer_email = payload.get("customer_email")
+    customer_address = payload.get("customer_address")
+
+    if req.customer_id:
+        customer = db.query(Customer).filter(Customer.id == req.customer_id).first()
+        if customer:
+            customer_name = customer.name
+            customer_email = customer.email
+            customer_address = customer.full_address
+
+    default_status = (
+        db.query(EstimateStatusConfig)
+        .filter(
+            EstimateStatusConfig.company_id == current_user.company_id,
+            EstimateStatusConfig.is_default == True,
+            EstimateStatusConfig.is_active == True,
+        )
+        .first()
+    )
+
+    estimate = Estimate(
+        company_id=current_user.company_id,
+        estimate_number=estimate_number,
+        status=EstimateStatus.DRAFT,
+        status_id=default_status.id if default_status else None,
+        estimate_date=date.today(),
+        customer_id=req.customer_id,
+        customer_name=customer_name,
+        customer_email=customer_email,
+        customer_address=customer_address,
+        title=payload.get("title") or req.title,
+        description=payload.get("description"),
+        tax_rate=payload.get("tax_rate") or company.default_tax_rate,
+        tax_label=company.default_tax_label,
+        notes=company.default_notes,
+        terms=company.default_terms,
+        created_by=current_user.id,
+    )
+    db.add(estimate)
+    db.flush()
+
+    sections = payload.get("sections", [])
+    for idx, section_data in enumerate(sections):
+        section = EstimateSection(
+            estimate_id=estimate.id,
+            name=section_data.get("name", "General"),
+            order_index=section_data.get("order_index", idx),
+        )
+        db.add(section)
+        db.flush()
+
+        for item_idx, item_data in enumerate(section_data.get("items", [])):
+            quantity = Decimal(str(item_data.get("quantity", 1)))
+            unit_price = Decimal(str(item_data.get("unit_price", 0)))
+            item = EstimateItem(
+                estimate_id=estimate.id,
+                section_id=section.id,
+                name=item_data.get("name", ""),
+                description=item_data.get("description"),
+                unit=item_data.get("unit"),
+                quantity=quantity,
+                unit_price=unit_price,
+                total=quantity * unit_price,
+                is_taxable=item_data.get("is_taxable", True),
+                order_index=item_data.get("order_index", item_idx),
+                notes=item_data.get("notes", []),
+            )
+            db.add(item)
+
+    db.commit()
+    db.refresh(estimate)
+
+    # Recalculate totals
+    from app.domains.estimate.api import recalculate_estimate
+    recalculate_estimate(estimate, db)
+
+    return CreateEstimateFromToolResponse(
+        estimate_id=str(estimate.id),
+        estimate_number=estimate.estimate_number,
+    )
