@@ -1,0 +1,865 @@
+/* ScopeIt Global Styles - Mobile-First Responsive Design */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap');
+
+/* ===== CSS Variables ===== */
+:root {
+  /* Safe area insets for notched devices */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+
+  /* Touch target minimum (iOS/Android guidelines) */
+  --touch-target-min: 44px;
+
+  /* Responsive spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+}
+
+/* ===== Reset ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #1f2937;
+  line-height: 1.6;
+  background-color: #f9fafb;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior-y: contain;
+}
+
+/* Prevent pull-to-refresh on mobile */
+html, body {
+  overscroll-behavior: none;
+}
+
+/* ===== Typography ===== */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.3;
+}
+
+/* Responsive typography */
+h1 { font-size: clamp(1.5rem, 4vw, 2rem); }
+h2 { font-size: clamp(1.25rem, 3vw, 1.5rem); }
+h3 { font-size: clamp(1.125rem, 2.5vw, 1.25rem); }
+
+/* ===== Links ===== */
+a {
+  color: inherit;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+/* ===== Buttons - Primary ===== */
+.btn-primary {
+  background: #111827;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--touch-target-min);
+  touch-action: manipulation;
+}
+
+.btn-primary:hover {
+  background: #374151;
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+/* ===== Buttons - Secondary ===== */
+.btn-secondary {
+  background: transparent;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--touch-target-min);
+  touch-action: manipulation;
+}
+
+.btn-secondary:hover {
+  border-color: #111827;
+  color: #111827;
+}
+
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
+/* ===== Buttons - Ghost ===== */
+.btn-ghost {
+  background: transparent;
+  color: #6b7280;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: var(--touch-target-min);
+  touch-action: manipulation;
+}
+
+.btn-ghost:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+/* ===== Cards ===== */
+.card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 24px;
+  transition: border-color 0.2s ease;
+}
+
+.card:hover {
+  border-color: #d1d5db;
+}
+
+/* ===== Form Inputs ===== */
+.input {
+  padding: 10px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 16px; /* Prevents zoom on iOS */
+  width: 100%;
+  transition: border-color 0.2s ease;
+  min-height: var(--touch-target-min);
+}
+
+.input:focus {
+  outline: none;
+  border-color: #111827;
+}
+
+.input::placeholder {
+  color: #9ca3af;
+}
+
+/* ===== Labels ===== */
+.label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+/* ===== Container ===== */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--spacing-md);
+}
+
+/* ===== Page Layout ===== */
+.page {
+  padding: var(--spacing-md) 0;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.page-title {
+  font-size: clamp(1.25rem, 4vw, 1.5rem);
+  font-weight: 700;
+  color: #111827;
+}
+
+/* ===== Ant Design Overrides ===== */
+
+/* Form.Item - Horizontal layout: center label with input */
+.ant-form-horizontal .ant-form-item-row {
+  align-items: center !important;
+}
+
+.ant-form-horizontal .ant-form-item-label {
+  padding-bottom: 0 !important;
+}
+
+.ant-form-horizontal .ant-form-item-label > label {
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Form.Item - Default left-align labels (override centering) */
+.ant-form-item-label {
+  text-align: left !important;
+}
+
+.ant-form-item-label > label {
+  justify-content: flex-start !important;
+}
+
+/* Form.Item - Horizontal layout: center label with input */
+.ant-form-horizontal .ant-form-item-label > label {
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Table Overrides */
+.ant-table {
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.ant-table-thead > tr > th {
+  background: #f9fafb !important;
+  font-weight: 600 !important;
+  color: #374151 !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  padding: 16px !important;
+  min-height: 56px !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid #f3f4f6 !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: #f9fafb !important;
+}
+
+/* Table header - prevent text wrapping and increase height */
+.ant-table-thead > tr > th {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  padding: 16px !important;
+  min-height: 56px !important;
+}
+
+/* Table cell - prevent text wrapping for consistent row height */
+.ant-table-tbody > tr > td {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  padding: 16px !important;
+  min-height: 56px !important;
+}
+
+/* Table header - increase height to match body */
+.ant-table-thead > tr > th {
+  padding: 16px !important;
+  min-height: 56px !important;
+}
+
+/* Compact table for settings */
+.compact-table .ant-table-thead > tr > th {
+  padding: 10px 12px !important;
+  min-height: auto !important;
+}
+
+.compact-table .ant-table-tbody > tr > td {
+  padding: 8px 12px !important;
+  min-height: auto !important;
+}
+
+/* Modal Overrides */
+.ant-modal-content {
+  border-radius: 12px !important;
+}
+
+.ant-modal-header {
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.ant-modal-title {
+  margin-bottom: 8px;
+}
+
+.ant-modal-footer {
+  border-top: none !important;
+}
+
+/* Tag Overrides */
+.ant-tag {
+  border-radius: 4px !important;
+  font-weight: 500 !important;
+}
+
+/* InputNumber - Match Select/Input height */
+.ant-input-number {
+  height: 40px !important;
+}
+
+.ant-input-number-input {
+  height: 38px !important;
+  font-family: inherit !important;
+}
+
+.ant-input-number-lg {
+  height: 44px !important;
+}
+
+.ant-input-number-lg .ant-input-number-input {
+  height: 42px !important;
+  font-size: 16px !important;
+}
+
+.ant-input-number-sm {
+  height: 32px !important;
+}
+
+.ant-input-number-sm .ant-input-number-input {
+  height: 30px !important;
+  font-size: 14px !important;
+}
+
+/* AutoComplete - Match InputNumber height */
+.ant-select-auto-complete .ant-select-selector {
+  height: 40px !important;
+}
+
+.ant-select-auto-complete .ant-select-selection-search-input {
+  height: 38px !important;
+}
+
+/* Touch-friendly Ant Design inputs - use size prop for height control */
+/* Only set font-size to prevent iOS zoom, let size prop handle height */
+.ant-input,
+.ant-input-number-input,
+.ant-select-selector,
+.ant-input-number {
+  font-size: 16px !important; /* Prevents zoom on iOS */
+  font-family: inherit !important;
+}
+
+.ant-picker {
+  min-height: var(--touch-target-min) !important;
+  font-size: 16px !important; /* Prevents zoom on iOS */
+}
+
+/* Ant Design Button minimum touch target */
+.ant-btn {
+  min-height: var(--touch-target-min);
+  touch-action: manipulation;
+}
+
+/* Ant Design Menu touch-friendly */
+.ant-menu-item {
+  min-height: var(--touch-target-min) !important;
+  line-height: var(--touch-target-min) !important;
+}
+
+/* Ant Design Menu selected state - white text on dark background */
+.ant-menu-item-selected {
+  background-color: #111827 !important;
+  color: #ffffff !important;
+}
+
+.ant-menu-item-selected .anticon {
+  color: #ffffff !important;
+}
+
+.ant-menu-item-selected .ant-menu-title-content {
+  color: #ffffff !important;
+}
+
+/* Ant Design Dropdown menu touch-friendly */
+.ant-dropdown-menu-item {
+  padding: 12px 16px !important;
+  min-height: var(--touch-target-min) !important;
+  line-height: 1.5 !important;
+}
+
+.ant-dropdown-menu-item-divider {
+  margin: 8px 0 !important;
+}
+
+/* Ant Design Tabs - Increase tab height */
+.ant-tabs-nav {
+  min-height: 56px !important;
+}
+
+.ant-tabs-tab {
+  padding: 16px 0 !important;
+  min-height: 56px !important;
+}
+
+/* Ant Design Tabs "more" operations area - Reduce padding */
+.ant-tabs-nav-operations {
+  padding: 0 20px !important;
+}
+
+/* Ant Design Tabs "more" button - Reduce width */
+.ant-tabs-nav-more {
+  width: auto !important;
+  min-width: 32px !important;
+  padding: 0 8px !important;
+}
+
+/* Ant Design Tabs "more" dropdown menu - Increase item height */
+.ant-tabs-dropdown-menu-item {
+  padding: 12px 16px !important;
+  min-height: 44px !important;
+  line-height: 1.5 !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* ===== Status Tags ===== */
+.status-draft { background: #f3f4f6; color: #6b7280; }
+.status-sent { background: #dbeafe; color: #1d4ed8; }
+.status-approved { background: #d1fae5; color: #059669; }
+.status-paid { background: #d1fae5; color: #059669; }
+.status-declined { background: #fee2e2; color: #dc2626; }
+.status-overdue { background: #fee2e2; color: #dc2626; }
+.status-partial { background: #fef3c7; color: #d97706; }
+
+/* ===== Animations ===== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease;
+}
+
+/* ===== Responsive Utilities ===== */
+
+/* Hide on mobile (< 768px) */
+.desktop-only {
+  display: block;
+}
+
+/* Hide on desktop (>= 768px) */
+.mobile-only {
+  display: none;
+}
+
+/* Stack on mobile */
+.stack-mobile {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+/* Full width on mobile */
+.full-width-mobile {
+  width: auto;
+}
+
+/* ===== Mobile Breakpoint (< 768px) ===== */
+@media (max-width: 767px) {
+  :root {
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 24px;
+  }
+
+  /* Prevent horizontal overflow on mobile */
+  html, body {
+    overflow-x: hidden !important;
+  }
+
+  .page {
+    padding: var(--spacing-md) 0;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-sm);
+  }
+
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-only {
+    display: block !important;
+  }
+
+  .stack-mobile {
+    flex-direction: column;
+  }
+
+  .full-width-mobile {
+    width: 100% !important;
+  }
+
+  /* Card mobile adjustments */
+  .card {
+    padding: var(--spacing-md);
+    border-radius: 8px;
+  }
+
+  /* Button full width on mobile for primary actions */
+  .btn-primary-mobile-full {
+    width: 100%;
+  }
+
+  /* Responsive table wrapper */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 calc(-1 * var(--spacing-md));
+    padding: 0 var(--spacing-md);
+  }
+
+  /* Ant Design Table mobile adjustments */
+  .ant-table {
+    font-size: 13px !important;
+  }
+
+  .ant-table-thead > tr > th,
+  .ant-table-tbody > tr > td {
+    padding: 16px 8px !important;
+    min-height: 56px !important;
+  }
+
+  /* Mobile modal full screen */
+  .ant-modal {
+    max-width: calc(100vw - 32px) !important;
+    margin: 16px !important;
+    padding-bottom: 0 !important;
+  }
+
+  .ant-modal-content {
+    border-radius: 12px !important;
+    max-height: calc(100vh - 32px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .ant-modal-body {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .ant-modal-footer {
+    flex-shrink: 0 !important;
+    padding: 12px 16px !important;
+    padding-bottom: calc(12px + var(--sab)) !important;
+    border-top: 1px solid #e5e7eb !important;
+    display: flex !important;
+    gap: 8px !important;
+  }
+
+  .ant-modal-footer .ant-btn {
+    flex: 1 !important;
+    margin: 0 !important;
+  }
+
+  /* Form layout mobile */
+  .ant-form-item {
+    margin-bottom: 16px !important;
+  }
+
+  /* Mobile form inputs - larger touch targets */
+  .ant-modal .ant-input,
+  .ant-modal .ant-input-number,
+  .ant-modal .ant-select-selector,
+  .ant-modal .ant-input-affix-wrapper {
+    min-height: 44px !important;
+  }
+
+  .ant-modal .ant-input-number-input {
+    min-height: 42px !important;
+  }
+
+  .ant-modal .ant-input-textarea textarea {
+    min-height: 80px !important;
+  }
+
+  /* Mobile switch touch target */
+  .ant-modal .ant-switch {
+    min-width: 44px !important;
+    min-height: 26px !important;
+  }
+
+  /* Mobile modal form grid layouts */
+  .ant-modal .ant-form-item-label > label {
+    font-size: 13px !important;
+  }
+
+  /* Mobile modal header */
+  .ant-modal-header {
+    padding: 14px 16px !important;
+  }
+
+  .ant-modal-title {
+    font-size: 16px !important;
+    line-height: 1.4 !important;
+  }
+
+  .ant-modal-close {
+    top: 10px !important;
+    right: 10px !important;
+  }
+
+  /* Drawer mobile adjustments */
+  .ant-drawer-content-wrapper {
+    max-width: 85vw !important;
+  }
+}
+
+/* ===== Tablet Breakpoint (768px - 1023px) ===== */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .container {
+    padding: 0 var(--spacing-lg);
+  }
+}
+
+/* ===== Desktop Breakpoint (>= 1024px) ===== */
+@media (min-width: 1024px) {
+  .page {
+    padding: var(--spacing-xl) 0;
+  }
+}
+
+/* ===== Large Desktop (>= 1280px) ===== */
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1400px;
+  }
+}
+
+/* ===== Mobile Card View for Tables ===== */
+.mobile-card-view {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .mobile-card-view {
+    display: block;
+  }
+
+  .mobile-card-view .mobile-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .mobile-card-view .mobile-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .mobile-card-view .mobile-card-title {
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .mobile-card-view .mobile-card-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 14px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .mobile-card-view .mobile-card-row:last-child {
+    border-bottom: none;
+  }
+
+  .mobile-card-view .mobile-card-label {
+    color: #6b7280;
+  }
+
+  .mobile-card-view .mobile-card-value {
+    color: #111827;
+    font-weight: 500;
+  }
+
+  .mobile-card-view .mobile-card-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-sm);
+    border-top: 1px solid #e5e7eb;
+  }
+
+  /* Hide desktop table on mobile */
+  .desktop-table {
+    display: none !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .mobile-card-view {
+    display: none !important;
+  }
+
+  .desktop-table {
+    display: block;
+  }
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f3f4f6;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Hide scrollbar on mobile for better UX */
+@media (max-width: 767px) {
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+}
+
+/* ===== Safe Area Utilities ===== */
+.safe-area-top {
+  padding-top: var(--sat);
+}
+
+.safe-area-bottom {
+  padding-bottom: var(--sab);
+}
+
+.safe-area-left {
+  padding-left: var(--sal);
+}
+
+.safe-area-right {
+  padding-right: var(--sar);
+}
+
+.safe-area-all {
+  padding: var(--sat) var(--sar) var(--sab) var(--sal);
+}
+
+/* ===== PWA Install Prompt Styling ===== */
+.pwa-install-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #111827;
+  color: white;
+  padding: 16px;
+  padding-bottom: calc(16px + var(--sab));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  z-index: 9999;
+  animation: slideUp 0.3s ease;
+}
+
+.pwa-install-banner button {
+  white-space: nowrap;
+}
+
+/* ===== Accessibility ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus visible for keyboard navigation */
+:focus-visible {
+  outline: 2px solid #111827;
+  outline-offset: 2px;
+}
+
+/* ===== Print Styles ===== */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+  }
+
+  .card {
+    border: 1px solid #ccc;
+    box-shadow: none;
+  }
+}

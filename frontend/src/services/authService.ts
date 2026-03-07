@@ -1,0 +1,163 @@
+/**
+ * ScopeIt - Auth Service
+ */
+import api from './api';
+import type {
+  LoginRequest,
+  LoginResponse,
+  RegisterRequest,
+  RegisterResponse,
+  RefreshTokenResponse,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+  User,
+} from '@/types/auth';
+
+export const authService = {
+  /**
+   * Login with email and password
+   */
+  login: async (data: LoginRequest): Promise<LoginResponse> => {
+    const response = await api.post<any>('/auth/login', data);
+    // Convert snake_case to camelCase
+    return {
+      accessToken: response.data.access_token,
+      refreshToken: response.data.refresh_token,
+      user: {
+        id: response.data.user.id,
+        email: response.data.user.email,
+        fullName: response.data.user.full_name || '',
+        phone: response.data.user.phone,
+        avatarUrl: response.data.user.avatar_url,
+        companyId: response.data.user.company_id || '',
+        role: response.data.user.role,
+        isActive: response.data.user.is_active,
+        isSuperuser: response.data.user.is_superuser,
+        defaultPdfTemplate: response.data.user.default_pdf_template || 'classic',
+        createdAt: response.data.user.created_at,
+      },
+    };
+  },
+
+  /**
+   * Register new user and company
+   */
+  register: async (data: RegisterRequest): Promise<RegisterResponse> => {
+    // Convert camelCase to snake_case for backend
+    const response = await api.post<any>('/auth/register', {
+      email: data.email,
+      password: data.password,
+      full_name: data.fullName,
+      company_name: data.companyName,
+    });
+    // Convert snake_case to camelCase
+    return {
+      accessToken: response.data.access_token,
+      refreshToken: response.data.refresh_token,
+      user: {
+        id: response.data.user.id,
+        email: response.data.user.email,
+        fullName: response.data.user.full_name || '',
+        phone: response.data.user.phone,
+        avatarUrl: response.data.user.avatar_url,
+        companyId: response.data.user.company_id || '',
+        role: response.data.user.role,
+        isActive: response.data.user.is_active,
+        isSuperuser: response.data.user.is_superuser,
+        defaultPdfTemplate: response.data.user.default_pdf_template || 'classic',
+        createdAt: response.data.user.created_at,
+      },
+    };
+  },
+
+  /**
+   * Refresh access token
+   */
+  refresh: async (refreshToken: string): Promise<RefreshTokenResponse> => {
+    const response = await api.post<any>('/auth/refresh', {
+      refresh_token: refreshToken,  // Convert to snake_case for backend
+    });
+    // Convert snake_case to camelCase
+    return {
+      accessToken: response.data.access_token,
+    };
+  },
+
+  /**
+   * Get current user info
+   */
+  getMe: async (): Promise<User> => {
+    const response = await api.get<any>('/auth/me');
+    // Convert snake_case to camelCase
+    return {
+      id: response.data.id,
+      email: response.data.email,
+      fullName: response.data.full_name || '',
+      phone: response.data.phone,
+      avatarUrl: response.data.avatar_url,
+      companyId: response.data.company_id || '',
+      role: response.data.role,
+      isActive: response.data.is_active,
+      isSuperuser: response.data.is_superuser,
+      defaultPdfTemplate: response.data.default_pdf_template || 'classic',
+      createdAt: response.data.created_at,
+    };
+  },
+
+  /**
+   * Update current user profile
+   */
+  updateProfile: async (data: { fullName?: string; defaultPdfTemplate?: string }): Promise<User> => {
+    const response = await api.patch<any>('/auth/me', {
+      full_name: data.fullName,
+      default_pdf_template: data.defaultPdfTemplate,
+    });
+    // Convert snake_case to camelCase
+    return {
+      id: response.data.id,
+      email: response.data.email,
+      fullName: response.data.full_name || '',
+      phone: response.data.phone,
+      avatarUrl: response.data.avatar_url,
+      companyId: response.data.company_id || '',
+      role: response.data.role,
+      isActive: response.data.is_active,
+      isSuperuser: response.data.is_superuser,
+      defaultPdfTemplate: response.data.default_pdf_template || 'classic',
+      createdAt: response.data.created_at,
+    };
+  },
+
+  /**
+   * Change password
+   */
+  changePassword: async (data: { currentPassword: string; newPassword: string }): Promise<void> => {
+    await api.post('/auth/me/change-password', {
+      current_password: data.currentPassword,
+      new_password: data.newPassword,
+    });
+  },
+
+  /**
+   * Logout
+   */
+  logout: async (): Promise<void> => {
+    await api.post('/auth/logout');
+  },
+
+  /**
+   * Request password reset email
+   */
+  forgotPassword: async (data: ForgotPasswordRequest): Promise<void> => {
+    await api.post('/auth/forgot-password', data);
+  },
+
+  /**
+   * Reset password with token
+   */
+  resetPassword: async (data: ResetPasswordRequest): Promise<void> => {
+    await api.post('/auth/reset-password', data);
+  },
+};
+
+export default authService;

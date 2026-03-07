@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice {{ invoice_number }}</title>
+    <style>
+        /* String setters for running headers */
+        .doc-number-setter { string-set: doc-number content(text); }
+        .customer-addr-setter { string-set: customer-addr content(text); }
+        .customer-loc-setter { string-set: customer-loc content(text); }
+
+        .page-header-data {
+            position: absolute;
+            visibility: hidden;
+            height: 0;
+            overflow: hidden;
+        }
+
+        @page {
+            size: letter;
+            margin: 0.4in 0.5in 0.5in 0.5in;
+
+            @top-right {
+                content: string(customer-addr) "\A" string(customer-loc);
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                font-size: 9pt;
+                color: #333;
+                text-align: right;
+                white-space: pre-line;
+                vertical-align: bottom;
+                padding-bottom: 5px;
+            }
+
+            @bottom-left {
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                font-size: 8pt;
+                color: #666;
+            }
+
+            @bottom-right {
+                content: "Invoice #" string(doc-number);
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                font-size: 8pt;
+                color: #666;
+            }
+        }
+
+        @page :first {
+            margin-top: 0.4in;
+
+            @top-right {
+                content: none;
+            }
+        }
+
+        /* Page break controls */
+        .items-table tbody tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .section-header {
+            page-break-after: avoid;
+            break-after: avoid;
+        }
+
+        .totals-section {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
+        .items-table {
+            page-break-inside: auto;
+        }
+
+        .items-table thead {
+            display: table-header-group;
+        }
+
+        /* Screen preview */
+        @media screen {
+            body {
+                padding: 0.4in 0.5in;
+                max-width: 8.5in;
+                margin: 0 auto;
+                background: white;
+            }
+            .page-header-data { display: none; }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 9pt;
+            line-height: 1.4;
+            color: #333;
+        }
+
+        /* Header */
+        .header {
+            margin-bottom: 20px;
+        }
+
+        .header-top {
+            margin-bottom: 15px;
+        }
+
+        .doc-title {
+            font-size: 20pt;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 3px;
+        }
+
+        .doc-meta {
+            font-size: 9pt;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .header-columns {
+            display: table;
+            width: 100%;
+        }
+
+        .header-left {
+            display: table-cell;
+            width: 50%;
+            vertical-align: top;
+        }
+
+        .header-right {
+            display: table-cell;
+            width: 50%;
+            vertical-align: top;
+            text-align: left;
+        }
+
+        .company-name {
+            font-weight: 700;
+            font-size: 10pt;
+            margin-bottom: 2px;
+        }
+
+        .company-details, .customer-details {
+            font-size: 9pt;
+            color: #333;
+            line-height: 1.5;
+        }
+
+        .section-label {
+            font-weight: 700;
+            font-size: 9pt;
+            margin-bottom: 2px;
+        }
+
+        .customer-name {
+            font-size: 9pt;
+        }
+
+        .logo {
+            max-width: 120px;
+            max-height: 40px;
+            margin-bottom: 8px;
+        }
+
+        /* Paid Status */
+        .paid-status {
+            color: #22863a;
+            font-size: 16pt;
+            font-weight: 700;
+            margin: 15px 0;
+        }
+
+        /* Section Header */
+        .section-header {
+            font-weight: 700;
+            font-size: 10pt;
+            color: #333;
+            margin-top: 20px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        /* Table */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 5px;
+        }
+
+        .items-table thead tr {
+            border-bottom: 1px solid #ccc;
+        }
+
+        .items-table th {
+            padding: 6px 8px;
+            font-size: 9pt;
+            font-weight: 400;
+            text-align: left;
+            color: #333;
+        }
+
+        .items-table th.text-right {
+            text-align: right;
+        }
+
+        .items-table tbody tr {
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .items-table td {
+            padding: 6px 8px;
+            font-size: 9pt;
+            vertical-align: top;
+        }
+
+        .items-table td.text-right {
+            text-align: right;
+        }
+
+        .item-name {
+            font-weight: 400;
+            color: #333;
+        }
+
+        .item-desc {
+            font-size: 8pt;
+            color: #666;
+            font-style: italic;
+            margin-top: 1px;
+            padding-left: 15px;
+            white-space: pre-wrap;
+        }
+
+        .item-number {
+            display: inline;
+        }
+
+        /* Section Subtotal */
+        .section-subtotal {
+            text-align: right;
+            font-size: 9pt;
+            color: #333;
+            padding: 8px 0;
+            margin-bottom: 10px;
+        }
+
+        /* Totals Section */
+        .totals-section {
+            margin-top: 15px;
+            display: table;
+            width: 100%;
+        }
+
+        .totals-spacer {
+            display: table-cell;
+            width: 60%;
+        }
+
+        .totals-table-wrapper {
+            display: table-cell;
+            width: 40%;
+        }
+
+        .totals-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .totals-table tr {
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .totals-table tr.total-row {
+            border-bottom: none;
+            border-top: 1px solid #333;
+        }
+
+        .totals-table tr.balance-row {
+            border-bottom: none;
+        }
+
+        .totals-table td {
+            padding: 5px 0;
+            font-size: 9pt;
+        }
+
+        .totals-table td.label {
+            color: #333;
+        }
+
+        .totals-table td.value {
+            text-align: right;
+        }
+
+        .totals-table .total-row td {
+            font-weight: 700;
+            padding-top: 8px;
+        }
+
+        .totals-table .balance-row td {
+            font-weight: 700;
+        }
+
+        .totals-table .payment-row td.value {
+            color: #333;
+        }
+
+        /* Notes */
+        .notes-section {
+            margin-top: 20px;
+            font-size: 8pt;
+            color: #666;
+        }
+
+        .notes-label {
+            font-weight: 700;
+            margin-bottom: 3px;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 25px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e5e5;
+        }
+
+        .footer-title {
+            font-size: 8pt;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 3px;
+        }
+
+        .footer-text {
+            font-size: 8pt;
+            color: #666;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <!-- String setters for running page headers -->
+    <div class="page-header-data">
+        <span class="doc-number-setter">{{ invoice_number }}</span>
+        <span class="customer-addr-setter">{{ customer.address or customer.address_line1 or '' }}</span>
+        <span class="customer-loc-setter">{{ customer.city }}{% if customer.city and customer.state %}, {% endif %}{{ customer.state }}</span>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <div class="header-top">
+            {% if balance_due <= 0.01 %}
+            <div class="doc-title">Paid Invoice</div>
+            {% else %}
+            <div class="doc-title">Invoice</div>
+            {% endif %}
+            <div class="doc-meta">
+                <strong>Invoice number</strong> {{ invoice_number }}<br>
+                Date of issue: {{ invoice_date | format_date }}<br>
+                {% if due_date %}Date due: {{ due_date | format_date }}{% endif %}
+            </div>
+        </div>
+
+        <div class="header-columns">
+            <div class="header-left">
+                {% if company.logo_url %}
+                <img src="{{ company.logo_url }}" alt="Logo" class="logo"><br>
+                {% endif %}
+                <div class="company-name">{{ company.name }}</div>
+                <div class="company-details">
+                    {% if company.address_line1 %}{{ company.address_line1 }}<br>{% endif %}
+                    {% if company.address_line2 %}{{ company.address_line2 }}<br>{% endif %}
+                    {% if company.city or company.state or company.zipcode %}
+                    {{ company.city }}{% if company.city and company.state %}, {% endif %}{{ company.state }}{% if company.zipcode %} {{ company.zipcode }}{% endif %}<br>
+                    {% endif %}
+                    {% if company.phone %}{{ company.phone }}<br>{% endif %}
+                    {% if company.email %}{{ company.email }}{% endif %}
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="section-label">Bill to</div>
+                <div class="customer-details">
+                    <span class="customer-name">{{ customer.name }}</span><br>
+                    {% if customer.address %}{{ customer.address }}<br>{% endif %}
+                    {% if customer.address_line2 %}{{ customer.address_line2 }}<br>{% endif %}
+                    {% if customer.city or customer.state or customer.zipcode %}
+                    {{ customer.city }}{% if customer.city and customer.state %}, {% endif %}{{ customer.state }}{% if customer.zipcode %} {{ customer.zipcode }}{% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Paid Status -->
+    {% if balance_due <= 0.01 %}
+    <div class="paid-status">PAID IN FULL</div>
+    {% endif %}
+
+    <!-- Notes -->
+    {% if notes %}
+    <div class="notes-section">
+        <div class="notes-label">Notes:</div>
+        {{ notes }}
+    </div>
+    {% endif %}
+
+    <!-- Items by Section -->
+    {% for section in sections %}
+
+    {% if section.name and section.name != 'Items' and section.name != 'Default' %}
+    <div class="section-header">{{ section.name }}</div>
+    {% elif loop.first %}
+    <div class="section-header">Default Section</div>
+    {% endif %}
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 50%">Item</th>
+                <th class="text-right" style="width: 10%">Qty</th>
+                <th class="text-right" style="width: 10%">Unit</th>
+                <th class="text-right" style="width: 15%">Price</th>
+                <th class="text-right" style="width: 15%">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in section.get('items', []) %}
+            <tr>
+                <td>
+                    <span class="item-number">{{ loop.index }}.</span> <span class="item-name">{{ item.name }}</span>
+                    {% if item.description %}
+                    <div class="item-desc">{{ item.description }}</div>
+                    {% endif %}
+                    {% if item.notes %}
+                    {% for note in item.notes %}
+                    <div class="item-desc">{{ note.content if note.content else note }}</div>
+                    {% endfor %}
+                    {% endif %}
+                </td>
+                <td class="text-right">{{ item.quantity | format_quantity }}</td>
+                <td class="text-right">{{ item.unit | default('EA') | upper }}</td>
+                <td class="text-right">{{ item.unit_price | format_currency }}</td>
+                <td class="text-right">{{ item.total | format_currency }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if sections | length > 1 and section.subtotal %}
+    <div class="section-subtotal">{{ section.name }} Subtotal: {{ section.subtotal | format_currency }}</div>
+    {% elif section.subtotal %}
+    <div class="section-subtotal">{{ section.name if section.name and section.name != 'Items' and section.name != 'Default' else 'Default Section' }} Subtotal: {{ section.subtotal | format_currency }}</div>
+    {% endif %}
+
+    {% endfor %}
+
+    <!-- Totals -->
+    <div class="totals-section">
+        <div class="totals-spacer"></div>
+        <div class="totals-table-wrapper">
+            <table class="totals-table">
+                <tr>
+                    <td class="label">Items Subtotal</td>
+                    <td class="value">{{ subtotal | format_currency }}</td>
+                </tr>
+                {% for adjustment in adjustments %}
+                <tr>
+                    <td class="label">{{ adjustment.name }}{% if adjustment.percentage %} ({{ adjustment.percentage }}%){% endif %}</td>
+                    <td class="value">{% if adjustment.type == 'discount' %}-{% endif %}{{ adjustment.amount | format_currency }}</td>
+                </tr>
+                {% endfor %}
+                {% if tax_amount and tax_amount > 0 %}
+                <tr>
+                    <td class="label">{{ tax_label | default('Tax') }}{% if tax_rate %} ({{ tax_rate }}%){% endif %}</td>
+                    <td class="value">{{ tax_amount | format_currency }}</td>
+                </tr>
+                {% endif %}
+                <tr class="total-row">
+                    <td class="label">Total</td>
+                    <td class="value">{{ total | format_currency }}</td>
+                </tr>
+                {% if payments and payments | length > 0 %}
+                {% for payment in payments %}
+                <tr class="payment-row">
+                    <td class="label">Payment{% if payment.payment_date %} ({{ payment.payment_date | format_date }}){% endif %}</td>
+                    <td class="value">-{{ payment.amount | format_currency }}</td>
+                </tr>
+                {% endfor %}
+                <tr>
+                    <td class="label">Total Paid</td>
+                    <td class="value">{{ amount_paid | format_currency }}</td>
+                </tr>
+                {% endif %}
+                <tr class="balance-row">
+                    <td class="label">Balance Due</td>
+                    <td class="value">{{ balance_due | format_currency }}</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    {% if terms %}
+    <div class="footer">
+        <div class="footer-title">Terms & Conditions</div>
+        <div class="footer-text">{{ terms }}</div>
+    </div>
+    {% endif %}
+</body>
+</html>

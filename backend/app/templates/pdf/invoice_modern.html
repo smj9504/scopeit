@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice {{ invoice_number }}</title>
+    <style>
+        @page {
+            size: letter;
+            margin: 0.5in 0.6in 0.5in 0.6in;
+
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                font-size: 8pt;
+                color: #888;
+            }
+        }
+
+        @media screen {
+            body {
+                padding: 0.5in 0.6in;
+                max-width: 8.5in;
+                margin: 0 auto;
+                background: white;
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            font-size: 9pt;
+            line-height: 1.5;
+            color: #1a1a1a;
+        }
+
+        /* Header */
+        .header {
+            display: table;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        .header-left {
+            display: table-cell;
+            vertical-align: top;
+        }
+
+        .header-right {
+            display: table-cell;
+            vertical-align: top;
+            text-align: right;
+        }
+
+        .doc-title {
+            font-size: 24pt;
+            font-weight: 600;
+            color: #1a1a1a;
+            letter-spacing: -0.5px;
+            margin-bottom: 14px;
+        }
+
+        .logo {
+            max-width: 140px;
+            max-height: 50px;
+            object-fit: contain;
+        }
+
+        /* Meta Info */
+        .meta-table {
+            margin-bottom: 18px;
+        }
+
+        .meta-row {
+            display: table;
+            width: 100%;
+            margin-bottom: 3px;
+        }
+
+        .meta-label {
+            display: table-cell;
+            width: 110px;
+            font-size: 9pt;
+            color: #666;
+        }
+
+        .meta-value {
+            display: table-cell;
+            font-size: 9pt;
+            color: #1a1a1a;
+            font-weight: 500;
+        }
+
+        /* Two Column Info */
+        .info-columns {
+            display: table;
+            width: 100%;
+            margin-bottom: 24px;
+        }
+
+        .info-col {
+            display: table-cell;
+            vertical-align: top;
+            width: 50%;
+        }
+
+        .info-col p {
+            font-size: 9pt;
+            margin: 2px 0;
+            color: #1a1a1a;
+        }
+
+        .info-col .name {
+            font-weight: 600;
+        }
+
+        .info-label {
+            font-weight: 600;
+            font-size: 9pt;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        /* Amount Headline */
+        .amount-headline {
+            font-size: 18pt;
+            font-weight: 600;
+            color: #1a1a1a;
+            letter-spacing: -0.3px;
+            margin: 24px 0 6px 0;
+        }
+
+        .amount-subtitle {
+            font-size: 9pt;
+            color: #666;
+            margin-bottom: 18px;
+        }
+
+        .paid-status {
+            font-size: 18pt;
+            font-weight: 600;
+            color: #1a1a1a;
+            letter-spacing: -0.3px;
+            margin: 24px 0 18px 0;
+        }
+
+        /* Notes */
+        .notes-block {
+            font-size: 9pt;
+            color: #444;
+            margin-bottom: 18px;
+            padding: 10px 0;
+            border-top: 1px solid #e8e8e8;
+            border-bottom: 1px solid #e8e8e8;
+        }
+
+        /* Items Table */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+
+        .items-table th {
+            text-align: left;
+            font-size: 8pt;
+            font-weight: 500;
+            color: #666;
+            padding: 8px 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        .items-table th.text-right {
+            text-align: right;
+        }
+
+        .items-table td {
+            font-size: 9pt;
+            padding: 10px 0;
+            vertical-align: top;
+            border-bottom: 1px solid #e8e8e8;
+        }
+
+        .items-table td.text-right {
+            text-align: right;
+        }
+
+        .item-name {
+            font-weight: 600;
+        }
+
+        .item-desc {
+            font-size: 8pt;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .item-note {
+            font-size: 8pt;
+            color: #888;
+            font-style: italic;
+            margin-top: 3px;
+            padding-left: 10px;
+            white-space: pre-wrap;
+        }
+
+        .section-title {
+            font-size: 11pt;
+            font-weight: 600;
+            color: #1a1a1a;
+            letter-spacing: -0.2px;
+            padding: 12px 0 8px 0;
+            margin-top: 14px;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        .section-subtotal {
+            text-align: right;
+            font-size: 9pt;
+            padding: 8px 0;
+            border-top: 1px solid #e8e8e8;
+        }
+
+        .section-subtotal span {
+            font-weight: 600;
+        }
+
+        /* Summary */
+        .summary-section {
+            display: table;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .summary-spacer {
+            display: table-cell;
+            width: 55%;
+        }
+
+        .summary-content {
+            display: table-cell;
+            width: 45%;
+        }
+
+        .summary-row {
+            display: table;
+            width: 100%;
+            border-top: 1px solid #e8e8e8;
+        }
+
+        .summary-row:first-child {
+            border-top: none;
+        }
+
+        .summary-label {
+            display: table-cell;
+            font-size: 9pt;
+            padding: 7px 0;
+            color: #666;
+        }
+
+        .summary-value {
+            display: table-cell;
+            font-size: 9pt;
+            padding: 7px 0;
+            text-align: right;
+            color: #1a1a1a;
+        }
+
+        .summary-row.total {
+            border-top: 1px solid #1a1a1a;
+        }
+
+        .summary-row.total .summary-label {
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .summary-row.total .summary-value {
+            font-weight: 600;
+        }
+
+        .summary-row.payment .summary-value {
+            color: #1a1a1a;
+        }
+
+        .balance-status {
+            font-weight: 600;
+        }
+
+        .balance-status.paid {
+            color: #1a1a1a;
+        }
+
+        .balance-status.due {
+            color: #d32f2f;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 24px;
+            padding-top: 14px;
+            border-top: 1px solid #e8e8e8;
+        }
+
+        .footer h4 {
+            font-size: 9pt;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .footer p {
+            font-size: 8pt;
+            color: #888;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <div class="doc-title">Invoice</div>
+        </div>
+        <div class="header-right">
+            {% if company.logo_url %}
+            <img src="{{ company.logo_url }}" alt="Logo" class="logo">
+            {% else %}
+            <div style="font-size: 14pt; font-weight: 600;">{{ company.name }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Meta Info -->
+    <div class="meta-table">
+        <div class="meta-row">
+            <span class="meta-label">Invoice number</span>
+            <span class="meta-value">{{ invoice_number }}</span>
+        </div>
+        <div class="meta-row">
+            <span class="meta-label">Invoice date</span>
+            <span class="meta-value">{{ invoice_date | format_date }}</span>
+        </div>
+        {% if due_date %}
+        <div class="meta-row">
+            <span class="meta-label">Due date</span>
+            <span class="meta-value">{{ due_date | format_date }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Company & Customer Info -->
+    <div class="info-columns">
+        <div class="info-col">
+            <p class="name">{{ company.name }}</p>
+            {% if company.address_line1 %}<p>{{ company.address_line1 }}</p>{% endif %}
+            {% if company.address_line2 %}<p>{{ company.address_line2 }}</p>{% endif %}
+            {% if company.city or company.state or company.zipcode %}
+            <p>{{ company.city }}{% if company.city and company.state %}, {% endif %}{{ company.state }} {{ company.zipcode }}</p>
+            {% endif %}
+            {% if company.phone %}<p>{{ company.phone }}</p>{% endif %}
+            {% if company.email %}<p>{{ company.email }}</p>{% endif %}
+        </div>
+        <div class="info-col">
+            <div class="info-label">Bill to</div>
+            <p>{{ customer.name }}</p>
+            {% if customer.address %}<p>{{ customer.address }}</p>{% endif %}
+            {% if customer.address_line2 %}<p>{{ customer.address_line2 }}</p>{% endif %}
+            {% if customer.city or customer.state or customer.zipcode %}
+            <p>{{ customer.city }}{% if customer.city and customer.state %}, {% endif %}{{ customer.state }} {{ customer.zipcode }}</p>
+            {% endif %}
+            {% if customer.email %}<p>{{ customer.email }}</p>{% endif %}
+        </div>
+    </div>
+
+    <!-- Amount Headline -->
+    {% if balance_due <= 0.01 %}
+    <div class="paid-status">Paid in full</div>
+    {% elif amount_paid > 0 %}
+    <div class="amount-headline">{{ balance_due | format_currency }} due {{ due_date | format_date }}</div>
+    <div class="amount-subtitle">Original: {{ total | format_currency }} | Paid: {{ amount_paid | format_currency }}</div>
+    {% else %}
+    <div class="amount-headline">{{ total | format_currency }} due {{ due_date | format_date }}</div>
+    {% endif %}
+
+    <!-- Notes -->
+    {% if notes %}
+    <div class="notes-block">{{ notes }}</div>
+    {% endif %}
+
+    <!-- Line Items -->
+    {% for section in sections %}
+    {% if section.name and section.name != 'Items' and section.name != 'Default' %}
+    <div class="section-title">{{ section.name }}</div>
+    {% endif %}
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 45%;">Description</th>
+                <th class="text-right" style="width: 12%;">Qty</th>
+                <th class="text-right" style="width: 10%;">Unit</th>
+                <th class="text-right" style="width: 16%;">Unit price</th>
+                <th class="text-right" style="width: 17%;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in section.get('items', []) %}
+            <tr>
+                <td>
+                    <div class="item-name">{{ item.name }}</div>
+                    {% if item.description %}
+                    <div class="item-desc">{{ item.description }}</div>
+                    {% endif %}
+                    {% if item.notes %}
+                    {% for note in item.notes %}
+                    <div class="item-note">{{ note.content if note.content else note }}</div>
+                    {% endfor %}
+                    {% endif %}
+                </td>
+                <td class="text-right">{{ item.quantity | format_quantity }}</td>
+                <td class="text-right">{{ item.unit | default('ea') }}</td>
+                <td class="text-right">{{ item.unit_price | format_currency }}</td>
+                <td class="text-right">{{ item.total | format_currency }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if sections | length > 1 and section.subtotal %}
+    <div class="section-subtotal">
+        {{ section.name }} Subtotal: <span>{{ section.subtotal | format_currency }}</span>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <!-- Summary -->
+    <div class="summary-section">
+        <div class="summary-spacer"></div>
+        <div class="summary-content">
+            <div class="summary-row">
+                <span class="summary-label">Subtotal</span>
+                <span class="summary-value">{{ subtotal | format_currency }}</span>
+            </div>
+
+            {% for adjustment in adjustments %}
+            <div class="summary-row">
+                <span class="summary-label">{{ adjustment.name }}{% if adjustment.percentage %} ({{ adjustment.percentage }}%){% endif %}</span>
+                <span class="summary-value">{% if adjustment.type == 'discount' %}-{% endif %}{{ adjustment.amount | format_currency }}</span>
+            </div>
+            {% endfor %}
+
+            {% if tax_amount and tax_amount > 0 %}
+            <div class="summary-row">
+                <span class="summary-label">{{ tax_label | default('Tax') }}{% if tax_rate %} ({{ tax_rate }}%){% endif %}</span>
+                <span class="summary-value">{{ tax_amount | format_currency }}</span>
+            </div>
+            {% endif %}
+
+            <div class="summary-row total">
+                <span class="summary-label">Total</span>
+                <span class="summary-value">{{ total | format_currency }}</span>
+            </div>
+
+            {% if payments and payments | length > 0 %}
+            {% for payment in payments %}
+            <div class="summary-row payment">
+                <span class="summary-label">Payment{% if payment.payment_date %} ({{ payment.payment_date | format_date }}){% endif %}</span>
+                <span class="summary-value">-{{ payment.amount | format_currency }}</span>
+            </div>
+            {% endfor %}
+            {% endif %}
+
+            <div class="summary-row total">
+                <span class="summary-label">Amount due</span>
+                {% if balance_due <= 0.01 %}
+                <span class="summary-value balance-status paid">$0.00</span>
+                {% else %}
+                <span class="summary-value balance-status due">{{ balance_due | format_currency }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    {% if terms %}
+    <div class="footer">
+        <h4>Terms & Conditions</h4>
+        <p>{{ terms }}</p>
+    </div>
+    {% endif %}
+</body>
+</html>

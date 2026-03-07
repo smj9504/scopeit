@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+    <!-- Primary Meta Tags -->
+    <title>ScopeIt - Estimating Software</title>
+    <meta name="title" content="ScopeIt - Estimating Software" />
+    <meta name="description" content="Simple estimating software for restoration contractors" />
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#111827" />
+    <meta name="background-color" content="#f9fafb" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="ScopeIt" />
+
+    <!-- iOS Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="ScopeIt" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+
+    <!-- MS Meta Tags (for Windows) -->
+    <meta name="msapplication-TileColor" content="#111827" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Prevent phone number detection -->
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Safe area insets for notched devices -->
+    <style>
+      :root {
+        --sat: env(safe-area-inset-top);
+        --sar: env(safe-area-inset-right);
+        --sab: env(safe-area-inset-bottom);
+        --sal: env(safe-area-inset-left);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

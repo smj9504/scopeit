@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Estimate {{ estimate_number }}</title>
+    <style>
+        @page {
+            size: letter;
+            margin: 0.5in 0.6in 0.5in 0.6in;
+
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: Georgia, 'Times New Roman', serif;
+                font-size: 8pt;
+                color: #666;
+            }
+        }
+
+        @media screen {
+            body {
+                padding: 0.5in 0.6in;
+                max-width: 8.5in;
+                margin: 0 auto;
+                background: white;
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Georgia, 'Times New Roman', serif;
+            font-size: 9pt;
+            line-height: 1.4;
+            color: #000;
+        }
+
+        /* Header */
+        .header {
+            display: table;
+            width: 100%;
+            margin-bottom: 16px;
+        }
+
+        .header-left {
+            display: table-cell;
+            vertical-align: top;
+        }
+
+        .header-right {
+            display: table-cell;
+            vertical-align: top;
+            text-align: right;
+        }
+
+        .doc-title {
+            font-size: 22pt;
+            font-weight: 700;
+            color: #000;
+            margin-bottom: 12px;
+        }
+
+        .logo {
+            max-width: 140px;
+            max-height: 50px;
+            object-fit: contain;
+        }
+
+        /* Meta Info */
+        .meta-table {
+            margin-bottom: 16px;
+        }
+
+        .meta-row {
+            display: table;
+            width: 100%;
+            margin-bottom: 2px;
+        }
+
+        .meta-label {
+            display: table-cell;
+            width: 110px;
+            font-size: 9pt;
+            color: #000;
+        }
+
+        .meta-value {
+            display: table-cell;
+            font-size: 9pt;
+            color: #000;
+        }
+
+        /* Two Column Info */
+        .info-columns {
+            display: table;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        .info-col {
+            display: table-cell;
+            vertical-align: top;
+            width: 50%;
+        }
+
+        .info-col p {
+            font-size: 9pt;
+            margin: 1px 0;
+            color: #000;
+        }
+
+        .info-col .name {
+            font-weight: 700;
+        }
+
+        .info-label {
+            font-weight: 700;
+            font-size: 9pt;
+            margin-bottom: 4px;
+        }
+
+        /* Amount Headline */
+        .amount-headline {
+            font-size: 16pt;
+            font-weight: 700;
+            color: #000;
+            margin: 20px 0 4px 0;
+        }
+
+        .amount-subtitle {
+            font-size: 9pt;
+            color: #000;
+            margin-bottom: 16px;
+        }
+
+        /* Notes */
+        .notes-block {
+            font-size: 9pt;
+            color: #333;
+            margin-bottom: 16px;
+            padding: 8px 0;
+            border-top: 1px solid #e5e5e5;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        /* Items Table */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+        }
+
+        .items-table th {
+            text-align: left;
+            font-size: 8pt;
+            font-weight: 400;
+            color: #666;
+            padding: 6px 0;
+            border-bottom: 1px solid #000;
+        }
+
+        .items-table th.text-right {
+            text-align: right;
+        }
+
+        .items-table td {
+            font-size: 9pt;
+            padding: 8px 0;
+            vertical-align: top;
+            border-bottom: 1px solid #e5e5e5;
+        }
+
+        .items-table td.text-right {
+            text-align: right;
+        }
+
+        .item-name {
+            font-weight: 500;
+        }
+
+        .item-desc {
+            font-size: 8pt;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .item-note {
+            font-size: 8pt;
+            color: #666;
+            font-style: italic;
+            margin-top: 3px;
+            padding-left: 10px;
+            white-space: pre-wrap;
+        }
+
+        .section-title {
+            font-size: 10pt;
+            font-weight: 700;
+            color: #000;
+            padding: 10px 0 6px 0;
+            margin-top: 12px;
+            border-bottom: 1px solid #000;
+        }
+
+        .section-subtotal {
+            text-align: right;
+            font-size: 9pt;
+            padding: 6px 0;
+            border-top: 1px solid #e5e5e5;
+        }
+
+        .section-subtotal span {
+            font-weight: 600;
+        }
+
+        /* Summary */
+        .summary-section {
+            display: table;
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        .summary-spacer {
+            display: table-cell;
+            width: 55%;
+        }
+
+        .summary-content {
+            display: table-cell;
+            width: 45%;
+        }
+
+        .summary-row {
+            display: table;
+            width: 100%;
+            border-top: 1px solid #e5e5e5;
+        }
+
+        .summary-row:first-child {
+            border-top: none;
+        }
+
+        .summary-label {
+            display: table-cell;
+            font-size: 9pt;
+            padding: 5px 0;
+            color: #000;
+        }
+
+        .summary-value {
+            display: table-cell;
+            font-size: 9pt;
+            padding: 5px 0;
+            text-align: right;
+            color: #000;
+        }
+
+        .summary-row.total {
+            border-top: 1px solid #000;
+        }
+
+        .summary-row.total .summary-label,
+        .summary-row.total .summary-value {
+            font-weight: 700;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 20px;
+            padding-top: 12px;
+            border-top: 1px solid #e5e5e5;
+        }
+
+        .footer h4 {
+            font-size: 9pt;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .footer p {
+            font-size: 8pt;
+            color: #666;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <div class="doc-title">Estimate</div>
+        </div>
+        <div class="header-right">
+            {% if company.logo_url %}
+            <img src="{{ company.logo_url }}" alt="Logo" class="logo">
+            {% else %}
+            <div style="font-size: 14pt; font-weight: 700;">{{ company.name }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Meta Info -->
+    <div class="meta-table">
+        <div class="meta-row">
+            <span class="meta-label">Estimate number</span>
+            <span class="meta-value">{{ estimate_number }}</span>
+        </div>
+        <div class="meta-row">
+            <span class="meta-label">Date</span>
+            <span class="meta-value">{{ estimate_date | format_date }}</span>
+        </div>
+        {% if valid_until %}
+        <div class="meta-row">
+            <span class="meta-label">Valid until</span>
+            <span class="meta-value">{{ valid_until | format_date }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Company & Customer Info -->
+    <div class="info-columns">
+        <div class="info-col">
+            <p class="name">{{ company.name }}</p>
+            {% if company.address_line1 %}<p>{{ company.address_line1 }}</p>{% endif %}
+            {% if company.address_line2 %}<p>{{ company.address_line2 }}</p>{% endif %}
+            {% if company.city or company.state or company.zipcode %}
+            <p>{{ company.city }}{% if company.city and company.state %}, {% endif %}{{ company.state }} {{ company.zipcode }}</p>
+            {% endif %}
+            {% if company.phone %}<p>{{ company.phone }}</p>{% endif %}
+            {% if company.email %}<p>{{ company.email }}</p>{% endif %}
+        </div>
+        <div class="info-col">
+            <div class="info-label">Prepared for</div>
+            <p>{{ customer.name }}</p>
+            {% if customer.address %}<p>{{ customer.address }}</p>{% endif %}
+            {% if customer.address_line2 %}<p>{{ customer.address_line2 }}</p>{% endif %}
+            {% if customer.city or customer.state or customer.zipcode %}
+            <p>{{ customer.city }}{% if customer.city and customer.state %}, {% endif %}{{ customer.state }} {{ customer.zipcode }}</p>
+            {% endif %}
+            {% if customer.email %}<p>{{ customer.email }}</p>{% endif %}
+        </div>
+    </div>
+
+    <!-- Amount Headline -->
+    <div class="amount-headline">Estimated total: {{ total | format_currency }}</div>
+    {% if valid_until %}
+    <div class="amount-subtitle">This estimate is valid until {{ valid_until | format_date }}</div>
+    {% endif %}
+
+    <!-- Notes -->
+    {% if notes %}
+    <div class="notes-block">{{ notes }}</div>
+    {% endif %}
+
+    <!-- Line Items -->
+    {% for section in sections %}
+    {% if section.name and section.name != 'Items' and section.name != 'Default' %}
+    <div class="section-title">{{ section.name }}</div>
+    {% endif %}
+
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 45%;">Description</th>
+                <th class="text-right" style="width: 12%;">Qty</th>
+                <th class="text-right" style="width: 10%;">Unit</th>
+                <th class="text-right" style="width: 16%;">Unit price</th>
+                <th class="text-right" style="width: 17%;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in section.get('items', []) %}
+            <tr>
+                <td>
+                    <div class="item-name">{{ item.name }}</div>
+                    {% if item.description %}
+                    <div class="item-desc">{{ item.description }}</div>
+                    {% endif %}
+                    {% if item.notes %}
+                    {% for note in item.notes %}
+                    <div class="item-note">{{ note.content if note.content else note }}</div>
+                    {% endfor %}
+                    {% endif %}
+                </td>
+                <td class="text-right">{{ item.quantity | format_quantity }}</td>
+                <td class="text-right">{{ item.unit | default('ea') }}</td>
+                <td class="text-right">{{ item.unit_price | format_currency }}</td>
+                <td class="text-right">{{ item.total | format_currency }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% if sections | length > 1 and section.subtotal %}
+    <div class="section-subtotal">
+        {{ section.name }} Subtotal: <span>{{ section.subtotal | format_currency }}</span>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    <!-- Summary -->
+    <div class="summary-section">
+        <div class="summary-spacer"></div>
+        <div class="summary-content">
+            <div class="summary-row">
+                <span class="summary-label">Subtotal</span>
+                <span class="summary-value">{{ subtotal | format_currency }}</span>
+            </div>
+
+            {% for adjustment in adjustments %}
+            <div class="summary-row">
+                <span class="summary-label">{{ adjustment.name }}{% if adjustment.percentage %} ({{ adjustment.percentage }}%){% endif %}</span>
+                <span class="summary-value">{% if adjustment.type == 'discount' %}-{% endif %}{{ adjustment.amount | format_currency }}</span>
+            </div>
+            {% endfor %}
+
+            {% if tax_amount and tax_amount > 0 %}
+            <div class="summary-row">
+                <span class="summary-label">{{ tax_label | default('Tax') }}{% if tax_rate %} ({{ tax_rate }}%){% endif %}</span>
+                <span class="summary-value">{{ tax_amount | format_currency }}</span>
+            </div>
+            {% endif %}
+
+            <div class="summary-row total">
+                <span class="summary-label">Estimated total</span>
+                <span class="summary-value">{{ total | format_currency }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    {% if terms %}
+    <div class="footer">
+        <h4>Terms & Conditions</h4>
+        <p>{{ terms }}</p>
+    </div>
+    {% endif %}
+</body>
+</html>
