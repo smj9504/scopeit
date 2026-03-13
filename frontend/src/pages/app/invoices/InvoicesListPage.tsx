@@ -3,30 +3,49 @@
  */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Button, Input, Select, Tag, Card } from 'antd';
+import { Table, Button, Input, Select, Tag, Card, Dropdown, message } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
   DollarOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { invoiceService } from '@/services/invoiceService';
 import { colors, fonts } from '@/styles/theme';
 import { useInvoiceStatuses, getStatusDisplay } from '@/hooks/useSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import type { Invoice, InvoiceStatus } from '@/types/entities';
+import { ImportExcelModal } from '@/components/common/ImportExcelModal';
+import type { Invoice, InvoiceStatus, ExcelParsedSection } from '@/types/entities';
 import type { ColumnsType } from 'antd/es/table';
 
 const InvoicesListPage: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const isMobile = useIsMobile();
 
   // Fetch invoice statuses
   const { data: statusConfigs } = useInvoiceStatuses();
+
+  // Import from Excel mutation
+  const importMutation = useMutation({
+    mutationFn: (sections: ExcelParsedSection[]) =>
+      invoiceService.create({ sections } as any),
+    onSuccess: (invoice) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      message.success('Invoice imported successfully');
+      setImportModalOpen(false);
+      navigate(`/app/invoices/${invoice.id}/edit`);
+    },
+    onError: () => {
+      message.error('Failed to create invoice from import');
+    },
+  });
 
   // Fetch invoices from API
   const { data, isLoading } = useQuery({
@@ -117,15 +136,44 @@ const InvoicesListPage: React.FC = () => {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
         <h1 style={{ fontFamily: fonts.heading, fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0 }}>Invoices</h1>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          size="large"
-          onClick={() => navigate('/app/invoices/new')}
-          style={{ background: colors.primary, fontWeight: 600, height: 44, borderRadius: 8, width: isMobile ? '100%' : 'auto' }}
-        >
-          New Invoice
-        </Button>
+        <div style={{ flexShrink: 0 }}>
+          <Dropdown.Button
+            type="primary"
+            size="large"
+            onClick={() => navigate('/app/invoices/new')}
+            menu={{
+              items: [
+                {
+                  key: 'import-excel',
+                  label: 'Import from Excel',
+                  icon: <UploadOutlined />,
+                },
+              ],
+              onClick: ({ key }) => {
+                if (key === 'import-excel') setImportModalOpen(true);
+              },
+            }}
+            buttonsRender={([leftButton, rightButton]) => [
+              React.cloneElement(leftButton as React.ReactElement, {
+                style: {
+                  background: colors.primary,
+                  fontWeight: 600,
+                  height: 44,
+                  borderRadius: '8px 0 0 8px',
+                },
+              }),
+              React.cloneElement(rightButton as React.ReactElement, {
+                style: {
+                  background: colors.primary,
+                  height: 44,
+                  borderRadius: '0 8px 8px 0',
+                },
+              }),
+            ]}
+          >
+            <PlusOutlined /> New Invoice
+          </Dropdown.Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -194,6 +242,16 @@ const InvoicesListPage: React.FC = () => {
           }}
         />
       </Card>
+
+      <ImportExcelModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImport={(sections) => importMutation.mutate(sections)}
+        documentType="invoice"
+        onDownloadTemplate={invoiceService.downloadExcelTemplate}
+        onParseFile={invoiceService.parseExcelFile}
+        importing={importMutation.isPending}
+      />
     </motion.div>
   );
 };

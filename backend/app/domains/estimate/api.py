@@ -1,8 +1,8 @@
 """
 ScopeIt - Estimate API Routes
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from pydantic import BaseModel, Field
@@ -55,6 +55,7 @@ class EstimateItemCreate(BaseModel):
     is_taxable: bool = True
     order_index: int = 0
     notes: Optional[List[str]] = None  # Array of note content strings
+    images: Optional[List[dict]] = None  # [{"filename": "...", "data": "base64..."}]
 
 
 class EstimateSectionCreate(BaseModel):
@@ -93,6 +94,7 @@ class EstimateItemResponse(BaseModel):
     is_taxable: bool
     order_index: int
     notes: Optional[List[str]] = []  # Array of note content strings
+    images: Optional[List[dict]] = []
 
     class Config:
         from_attributes = True
@@ -319,6 +321,7 @@ def serialize_estimate(estimate: Estimate) -> dict:
                 "is_taxable": item.is_taxable,
                 "order_index": item.order_index,
                 "notes": item.notes or [],
+                "images": item.images or [],
             })
         data["sections"].append(section_data)
 
@@ -483,6 +486,38 @@ async def get_pdf_templates():
     return get_template_info()
 
 
+@router.get("/excel-template")
+async def download_estimate_excel_template():
+    """Download Excel template for estimate import"""
+    from app.common.excel_service import generate_template
+
+    buffer = generate_template("estimate")
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": "attachment; filename=scopeit_estimate_template.xlsx"
+        },
+    )
+
+
+@router.post("/import-excel")
+async def parse_estimate_excel(
+    file: UploadFile = File(...),
+):
+    """Parse uploaded Excel file and return preview data for estimate import"""
+    from app.common.excel_service import parse_excel_file
+
+    if not file.filename.endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Please upload an Excel file (.xlsx)")
+
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 5MB.")
+
+    return parse_excel_file(contents)
+
+
 @router.get("/{estimate_id}", response_model=EstimateResponse)
 async def get_estimate(
     estimate_id: str,
@@ -583,9 +618,10 @@ async def create_estimate(
                 is_taxable=item_data.is_taxable,
                 order_index=item_data.order_index,
                 notes=item_data.notes or [],  # Store notes as JSON array
+                images=item_data.images or [],
             )
             db.add(item)
-    
+
     db.commit()
     db.refresh(estimate)
     
@@ -669,6 +705,7 @@ async def update_estimate(
                 is_taxable=item_data.is_taxable,
                 order_index=item_data.order_index,
                 notes=item_data.notes or [],  # Store notes as JSON array
+                images=item_data.images or [],
             )
             db.add(item)
 
@@ -866,6 +903,7 @@ async def bulk_action(
                 is_taxable=item.is_taxable,
                 order_index=item.order_index,
                 notes=item.notes or [],  # Copy notes
+                images=item.images or [],
             )
             db.add(new_item)
         
@@ -1090,6 +1128,7 @@ async def convert_to_invoice(
             is_taxable=est_item.is_taxable,
             order_index=est_item.order_index,
             notes=est_item.notes or [],
+            images=est_item.images or [],
         )
         db.add(inv_item)
 
@@ -1167,6 +1206,7 @@ def _prepare_estimate_pdf_data(estimate: Estimate, company: Company, db: Session
                 "total": float(item.total) if item.total else 0,
                 "is_taxable": item.is_taxable,
                 "notes": item.notes or [],
+                "images": item.images or [],
             })
         sections_data.append({
             "name": section.name or "",

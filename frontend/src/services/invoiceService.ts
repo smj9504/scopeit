@@ -11,6 +11,7 @@ import type {
   PaymentMethod,
   PdfTemplateInfo,
   PdfTemplateId,
+  ExcelParseResult,
 } from '@/types/entities';
 
 export interface InvoiceFilters {
@@ -76,6 +77,28 @@ export const invoiceService = {
    */
   create: async (data: InvoiceCreate): Promise<Invoice> => {
     const response = await api.post<Invoice>('/invoices', data);
+    return response.data;
+  },
+
+  /**
+   * Download Excel template for invoice import
+   */
+  downloadExcelTemplate: async (): Promise<Blob> => {
+    const response = await api.get('/invoices/excel-template', {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  /**
+   * Parse Excel file for invoice import preview
+   */
+  parseExcelFile: async (file: File): Promise<ExcelParseResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/invoices/import-excel', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 

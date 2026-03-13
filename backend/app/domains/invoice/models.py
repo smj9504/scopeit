@@ -180,10 +180,14 @@ class InvoiceItem(Base):
     
     # Notes
     notes = Column(JSONB, default=[])
-    
+
+    # Images (base64 encoded)
+    # Format: [{"filename": "photo1.jpg", "data": "data:image/jpeg;base64,..."}]
+    images = Column(JSONB, default=[])
+
     # Timestamps
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
-    
+
     # Relationships
     invoice = relationship("Invoice", back_populates="items")
     section = relationship("InvoiceSection", back_populates="items")

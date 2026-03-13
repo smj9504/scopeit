@@ -77,6 +77,12 @@ export interface CustomerCreate {
   notes?: string;
 }
 
+// Line Item Image
+export interface LineItemImage {
+  filename: string;
+  data: string; // base64 data URI
+}
+
 // Line Item
 export type LineItemVisibility = 'company' | 'private';
 
@@ -153,6 +159,7 @@ export interface EstimateItem {
   isTaxable: boolean;
   orderIndex: number;
   notes?: string[];
+  images?: LineItemImage[];
 }
 
 export interface EstimatePayment {
@@ -241,6 +248,7 @@ export interface EstimateItemCreate {
   is_taxable?: boolean;
   order_index: number;
   notes?: string[];
+  images?: LineItemImage[];
 }
 
 // Invoice
@@ -270,6 +278,7 @@ export interface InvoiceItem {
   isTaxable: boolean;
   orderIndex: number;
   notes?: string[];  // Array of note content strings
+  images?: LineItemImage[];
 }
 
 export interface Payment {
@@ -364,6 +373,7 @@ export interface InvoiceItemCreate {
   isTaxable?: boolean;
   orderIndex: number;
   notes?: string[];
+  images?: LineItemImage[];
 }
 
 // Subscription
@@ -542,4 +552,29 @@ export interface BulkStatusMigrationResponse {
   migratedCount: number;
   fromStatusId: string;
   toStatusId: string;
+}
+
+// Excel Import
+export interface ExcelParsedItem {
+  code: string | null;
+  name: string;
+  description: string | null;
+  unit: string | null;
+  quantity: number;
+  unit_price: number;
+  is_taxable: boolean;
+  order_index: number;
+}
+
+export interface ExcelParsedSection {
+  name: string;
+  order_index: number;
+  items: ExcelParsedItem[];
+}
+
+export interface ExcelParseResult {
+  sections: ExcelParsedSection[];
+  errors: string[];
+  warnings: string[];
+  total_items: number;
 }

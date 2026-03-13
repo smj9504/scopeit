@@ -9,6 +9,7 @@ import type {
   PaginatedResponse,
   PdfTemplateInfo,
   PdfTemplateId,
+  ExcelParseResult,
 } from '@/types/entities';
 
 export interface EstimateFilters {
@@ -182,6 +183,28 @@ export const estimateService = {
   create: async (data: EstimateCreate): Promise<Estimate> => {
     const response = await api.post<any>('/estimates', data);
     return estimateService.transformEstimate(response.data);
+  },
+
+  /**
+   * Download Excel template for estimate import
+   */
+  downloadExcelTemplate: async (): Promise<Blob> => {
+    const response = await api.get('/estimates/excel-template', {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  /**
+   * Parse Excel file for estimate import preview
+   */
+  parseExcelFile: async (file: File): Promise<ExcelParseResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/estimates/import-excel', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
   },
 
   /**

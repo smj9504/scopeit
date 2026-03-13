@@ -23,6 +23,7 @@ import {
   Spin,
   AutoComplete,
   App,
+  message,
 } from 'antd';
 import {
   PlusOutlined,
@@ -41,6 +42,9 @@ import {
   AppstoreAddOutlined,
   EyeOutlined,
   EditOutlined,
+  CameraOutlined,
+  PaperClipOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import {
   DndContext,
@@ -74,6 +78,11 @@ import { PdfPreviewModal } from '@/components/features/PdfPreviewModal';
 import type { LineItem, LineItemNote, PdfTemplateInfo, PdfTemplateId } from '@/types/entities';
 
 // Types
+interface LineItemImage {
+  filename: string;
+  data: string;
+}
+
 interface LineItemData {
   id: string;
   sectionId: string;
@@ -86,6 +95,7 @@ interface LineItemData {
   isTaxable: boolean;
   orderIndex: number;
   notes?: string[]; // Selected notes for this item
+  images?: LineItemImage[];
 }
 
 interface SectionData {
@@ -106,8 +116,9 @@ const SortableLineItem: React.FC<{
   onUpdate: (updates: Partial<LineItemData>) => void;
   onDelete: () => void;
   onManageNotes: () => void;
+  onManagePhotos: () => void;
   onEdit: () => void;
-}> = ({ item, isSelected, onToggleSelect, onUpdate, onDelete, onManageNotes, onEdit }) => {
+}> = ({ item, isSelected, onToggleSelect, onUpdate, onDelete, onManageNotes, onManagePhotos, onEdit }) => {
   const {
     attributes,
     listeners,
@@ -125,6 +136,7 @@ const SortableLineItem: React.FC<{
 
   const total = item.quantity * item.unitPrice;
   const hasNotes = item.notes && item.notes.length > 0;
+  const hasPhotos = item.images && item.images.length > 0;
 
   return (
     <div
@@ -178,6 +190,19 @@ const SortableLineItem: React.FC<{
           style={{ color: hasNotes ? colors.primary : colors.textMuted }}
         >
           {hasNotes ? item.notes!.length : ''}
+        </Button>
+      </Tooltip>
+
+      {/* Photos Button */}
+      <Tooltip title={hasPhotos ? `${item.images!.length} photo(s) attached` : 'Add photos'}>
+        <Button
+          type="text"
+          size="small"
+          icon={<CameraOutlined />}
+          onClick={onManagePhotos}
+          style={{ color: hasPhotos ? colors.primary : colors.textMuted }}
+        >
+          {hasPhotos ? item.images!.length : ''}
         </Button>
       </Tooltip>
 
@@ -270,6 +295,7 @@ const Section: React.FC<{
   onUpdateItem: (itemId: string, updates: Partial<LineItemData>) => void;
   onDeleteItem: (itemId: string) => void;
   onManageItemNotes: (itemId: string) => void;
+  onManageItemPhotos: (itemId: string) => void;
   // Mobile props
   isMobile?: boolean;
   onMobileAddItem?: () => void;
@@ -290,6 +316,7 @@ const Section: React.FC<{
   onUpdateItem,
   onDeleteItem,
   onManageItemNotes,
+  onManageItemPhotos,
   isMobile = false,
   onMobileAddItem,
   onMobileEditItem,
@@ -462,6 +489,7 @@ const Section: React.FC<{
                     onUpdate={(updates) => onUpdateItem(item.id, updates)}
                     onDelete={() => onDeleteItem(item.id)}
                     onManageNotes={() => onManageItemNotes(item.id)}
+                    onManagePhotos={() => onManageItemPhotos(item.id)}
                     onEdit={() => onMobileEditItem?.(item)}
                   />
                 ))
@@ -968,6 +996,266 @@ const ItemNotesModal: React.FC<{
   );
 };
 
+// Item Photos Modal
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+const ItemPhotosModal: React.FC<{
+  open: boolean;
+  item: LineItemData | null;
+  onClose: () => void;
+  onSave: (images: LineItemImage[]) => void;
+}> = ({ open, item, onClose, onSave }) => {
+  const [images, setImages] = useState<LineItemImage[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const isMobile = useIsMobile();
+
+  useEffect(() => {
+    if (item) {
+      setImages(item.images || []);
+    }
+  }, [item]);
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const resizeImage = (dataUrl: string, maxWidth = 1920): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        if (img.width <= maxWidth) {
+          resolve(dataUrl);
+          return;
+        }
+        const canvas = document.createElement('canvas');
+        const ratio = maxWidth / img.width;
+        canvas.width = maxWidth;
+        canvas.height = img.height * ratio;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = dataUrl;
+    });
+  };
+
+  const handleFiles = async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    const valid: LineItemImage[] = [];
+
+    for (const file of fileArray) {
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        message.warning(`${file.name}: Only JPEG, PNG, WebP allowed`);
+        continue;
+      }
+      if (file.size > MAX_IMAGE_SIZE) {
+        message.warning(`${file.name}: Max 5MB per image`);
+        continue;
+      }
+      try {
+        const base64 = await fileToBase64(file);
+        const resized = await resizeImage(base64);
+        valid.push({ filename: file.name, data: resized });
+      } catch {
+        message.error(`Failed to process ${file.name}`);
+      }
+    }
+    if (valid.length > 0) {
+      setImages(prev => [...prev, ...valid]);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleDeleteImage = (index: number) => {
+    setImages(images.filter((_, i) => i !== index));
+  };
+
+  const handleSave = () => {
+    onSave(images);
+    onClose();
+  };
+
+  return (
+    <Modal
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <CameraOutlined style={{ flexShrink: 0 }} />
+          <span style={{
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}>
+            Photos: {item?.name}
+          </span>
+        </div>
+      }
+      open={open}
+      onCancel={onClose}
+      footer={
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <Button onClick={onClose} style={{ flex: isMobile ? 1 : undefined }}>Cancel</Button>
+          <Button type="primary" onClick={handleSave} style={{ background: colors.primary, flex: isMobile ? 1 : undefined }}>
+            Save Photos
+          </Button>
+        </div>
+      }
+      width={isMobile ? '100%' : 600}
+      style={isMobile ? { top: 20, maxWidth: 'calc(100vw - 32px)', margin: '0 auto' } : undefined}
+      styles={isMobile ? { body: { padding: '16px', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' } } : undefined}
+    >
+      {/* Upload area */}
+      <div
+        onDrop={handleDrop}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        style={{
+          border: '2px dashed #d9d9d9',
+          borderRadius: 8,
+          padding: 24,
+          textAlign: 'center',
+          cursor: 'pointer',
+          marginBottom: 20,
+          background: '#fafafa',
+          transition: 'border-color 0.2s',
+        }}
+        onClick={() => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/jpeg,image/png,image/webp';
+          input.multiple = true;
+          input.onchange = (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (files) handleFiles(files);
+          };
+          input.click();
+        }}
+      >
+        <UploadOutlined style={{ fontSize: 24, color: colors.textSecondary, marginBottom: 8 }} />
+        <div style={{ color: colors.textSecondary, fontSize: 13 }}>
+          Click or drag photos here
+        </div>
+        <div style={{ color: colors.textSecondary, fontSize: 11, marginTop: 4 }}>
+          JPEG, PNG, WebP — Max 5MB each
+        </div>
+      </div>
+
+      {/* Image grid */}
+      {images.length > 0 && (
+        <>
+          <Divider style={{ margin: '0 0 16px 0' }} />
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr 1fr 1fr',
+            gap: 12,
+          }}>
+            {images.map((img, index) => (
+              <div
+                key={index}
+                style={{
+                  position: 'relative',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                  border: `1px solid ${colors.border}`,
+                  background: '#f5f5f5',
+                }}
+              >
+                <img
+                  src={img.data}
+                  alt={img.filename}
+                  style={{
+                    width: '100%',
+                    height: 120,
+                    objectFit: 'cover',
+                    display: 'block',
+                  }}
+                />
+                {editingIndex === index ? (
+                  <Input
+                    size="small"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onPressEnter={() => {
+                      if (editingName.trim()) {
+                        setImages(prev => prev.map((img2, i) => i === index ? { ...img2, filename: editingName.trim() } : img2));
+                      }
+                      setEditingIndex(null);
+                    }}
+                    onBlur={() => {
+                      if (editingName.trim()) {
+                        setImages(prev => prev.map((img2, i) => i === index ? { ...img2, filename: editingName.trim() } : img2));
+                      }
+                      setEditingIndex(null);
+                    }}
+                    autoFocus
+                    style={{ fontSize: 11, margin: '2px 4px', width: 'calc(100% - 8px)' }}
+                  />
+                ) : (
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingIndex(index);
+                      setEditingName(img.filename);
+                    }}
+                    title="Click to rename"
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: 11,
+                      color: colors.textSecondary,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <EditOutlined style={{ marginRight: 4, fontSize: 10 }} />
+                    {img.filename}
+                  </div>
+                )}
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  danger
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteImage(index);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 4,
+                    right: 4,
+                    background: 'rgba(255,255,255,0.85)',
+                    borderRadius: 4,
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {images.length === 0 && (
+        <div style={{ textAlign: 'center', color: colors.textSecondary, padding: '20px 0' }}>
+          No photos attached yet.
+        </div>
+      )}
+    </Modal>
+  );
+};
+
 // Main Editor Page
 const EstimateEditorPage: React.FC = () => {
   const { id } = useParams();
@@ -1013,6 +1301,8 @@ const EstimateEditorPage: React.FC = () => {
   const [libraryTargetSection, setLibraryTargetSection] = useState<string | null>(null);
   const [notesModalOpen, setNotesModalOpen] = useState(false);
   const [notesTargetItem, setNotesTargetItem] = useState<LineItemData | null>(null);
+  const [photosModalOpen, setPhotosModalOpen] = useState(false);
+  const [photosTargetItem, setPhotosTargetItem] = useState<LineItemData | null>(null);
 
   // Mobile drawer state
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -1106,6 +1396,7 @@ const EstimateEditorPage: React.FC = () => {
             isTaxable: item.isTaxable,
             orderIndex: item.orderIndex,
             notes: item.notes,
+            images: item.images,
           }))
         );
         setItems(loadedItems);
@@ -1379,6 +1670,21 @@ const EstimateEditorPage: React.FC = () => {
     }
   };
 
+  // Photos modal handlers
+  const openPhotosModal = (itemId: string) => {
+    const item = items.find((i) => i.id === itemId);
+    if (item) {
+      setPhotosTargetItem(item);
+      setPhotosModalOpen(true);
+    }
+  };
+
+  const handleSavePhotos = (updatedImages: LineItemImage[]) => {
+    if (photosTargetItem) {
+      updateItem(photosTargetItem.id, { images: updatedImages.length > 0 ? updatedImages : undefined });
+    }
+  };
+
   // Mobile drawer handlers
   const openMobileDrawerForNew = (sectionId: string) => {
     setMobileEditSectionId(sectionId);
@@ -1473,6 +1779,7 @@ const EstimateEditorPage: React.FC = () => {
           is_taxable: item.isTaxable,
           order_index: item.orderIndex,
           notes: item.notes,
+          images: item.images,
         })),
     }));
 
@@ -1641,6 +1948,7 @@ const EstimateEditorPage: React.FC = () => {
                   onUpdateItem={updateItem}
                   onDeleteItem={deleteItem}
                   onManageItemNotes={openNotesModal}
+                  onManageItemPhotos={openPhotosModal}
                   // Mobile props
                   isMobile={isMobile}
                   onMobileAddItem={() => openMobileDrawerForNew(section.id)}
@@ -1872,6 +2180,17 @@ const EstimateEditorPage: React.FC = () => {
         onSave={handleSaveNotes}
       />
 
+      {/* Item Photos Modal */}
+      <ItemPhotosModal
+        open={photosModalOpen}
+        item={photosTargetItem}
+        onClose={() => {
+          setPhotosModalOpen(false);
+          setPhotosTargetItem(null);
+        }}
+        onSave={handleSavePhotos}
+      />
+
       {/* Line Item Edit Drawer (works on both desktop and mobile) */}
       <MobileLineItemDrawer
         open={mobileDrawerOpen}
@@ -1885,6 +2204,7 @@ const EstimateEditorPage: React.FC = () => {
         onSave={handleMobileDrawerSave}
         onDelete={handleMobileDrawerDelete}
         onManageNotes={mobileEditItem ? () => openNotesModal(mobileEditItem.id) : undefined}
+        onManagePhotos={mobileEditItem ? () => openPhotosModal(mobileEditItem.id) : undefined}
       />
 
       {/* PDF Preview Modal */}

@@ -12,7 +12,7 @@ import {
   Button,
   Switch,
 } from 'antd';
-import { DeleteOutlined, FileTextOutlined } from '@ant-design/icons';
+import { DeleteOutlined, FileTextOutlined, CameraOutlined } from '@ant-design/icons';
 import { colors, fonts } from '@/styles/theme';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
@@ -25,6 +25,7 @@ interface LineItemData {
   unitPrice: number;
   isTaxable: boolean;
   notes?: string[];
+  images?: { filename: string; data: string }[];
 }
 
 interface MobileLineItemDrawerProps {
@@ -35,6 +36,7 @@ interface MobileLineItemDrawerProps {
   onSave: (updates: Partial<LineItemData>) => void;
   onDelete?: () => void;
   onManageNotes?: () => void;
+  onManagePhotos?: () => void;
 }
 
 const unitOptions = [
@@ -55,6 +57,7 @@ export const MobileLineItemDrawer: React.FC<MobileLineItemDrawerProps> = ({
   onSave,
   onDelete,
   onManageNotes,
+  onManagePhotos,
 }) => {
   const [form] = Form.useForm();
   const isMobile = useIsMobile();
@@ -237,13 +240,28 @@ export const MobileLineItemDrawer: React.FC<MobileLineItemDrawerProps> = ({
 
         {/* Notes Button */}
         {onManageNotes && !isNew && (
-          <Form.Item style={{ marginBottom: 0 }}>
+          <Form.Item style={{ marginBottom: 8 }}>
             <Button
               block
               icon={<FileTextOutlined />}
               onClick={onManageNotes}
             >
               {hasNotes ? `Manage Notes (${item?.notes?.length})` : 'Add Notes'}
+            </Button>
+          </Form.Item>
+        )}
+
+        {/* Photos Button */}
+        {onManagePhotos && !isNew && (
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Button
+              block
+              icon={<CameraOutlined />}
+              onClick={onManagePhotos}
+            >
+              {item?.images && item.images.length > 0
+                ? `Manage Photos (${item.images.length})`
+                : 'Add Photos'}
             </Button>
           </Form.Item>
         )}

@@ -300,6 +300,55 @@
             color: #d32f2f;
         }
 
+        /* Item Attachments */
+        .item-attachments {
+            font-size: 8pt;
+            color: #888;
+            margin-top: 2px;
+        }
+
+        /* Attached Photos Section */
+        .attached-photos-section {
+            page-break-before: always;
+            margin-top: 20px;
+        }
+
+        .attached-photos-title {
+            font-size: 12pt;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        .photo-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .photo-item {
+            width: 48%;
+            page-break-inside: avoid;
+            margin-bottom: 12px;
+        }
+
+        .photo-item img {
+            width: 100%;
+            max-height: 280px;
+            object-fit: contain;
+            border: 1px solid #e8e8e8;
+            border-radius: 4px;
+        }
+
+        .photo-caption {
+            font-size: 8pt;
+            color: #888;
+            text-align: center;
+            margin-top: 4px;
+        }
+
         /* Footer */
         .footer {
             margin-top: 24px;
@@ -421,6 +470,9 @@
                     <div class="item-note">{{ note.content if note.content else note }}</div>
                     {% endfor %}
                     {% endif %}
+                    {% if item.images %}
+                    <div class="item-attachments">📎 {{ item.images | map(attribute='filename') | join(', ') }}</div>
+                    {% endif %}
                 </td>
                 <td class="text-right">{{ item.quantity | format_quantity }}</td>
                 <td class="text-right">{{ item.unit | default('ea') }}</td>
@@ -485,6 +537,21 @@
             </div>
         </div>
     </div>
+
+    <!-- Attached Photos -->
+    {% if attached_photos %}
+    <div class="attached-photos-section">
+        <div class="attached-photos-title">Attached Photos</div>
+        <div class="photo-grid">
+            {% for photo in attached_photos %}
+            <div class="photo-item">
+                <img src="{{ photo.data }}" alt="{{ photo.filename }}">
+                <div class="photo-caption">{{ photo.line_item_name }} — {{ photo.filename }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Footer -->
     {% if terms %}

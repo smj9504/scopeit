@@ -10,30 +10,51 @@ import {
   Select,
   Tag,
   Card,
+  Dropdown,
+  message,
 } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
   FileTextOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { estimateService } from '@/services/estimateService';
 import { colors, fonts } from '@/styles/theme';
 import { useEstimateStatuses, getStatusDisplay } from '@/hooks/useSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import type { Estimate, EstimateStatus } from '@/types/entities';
+import { ImportExcelModal } from '@/components/common/ImportExcelModal';
+import type { Estimate, EstimateStatus, ExcelParsedSection } from '@/types/entities';
 import type { ColumnsType } from 'antd/es/table';
 
 const EstimatesListPage: React.FC = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const isMobile = useIsMobile();
 
   // Fetch estimate statuses
   const { data: statusConfigs } = useEstimateStatuses();
+
+  // Import from Excel mutation
+  const importMutation = useMutation({
+    mutationFn: (sections: ExcelParsedSection[]) =>
+      estimateService.create({ sections } as any),
+    onSuccess: (estimate) => {
+      queryClient.invalidateQueries({ queryKey: ['estimates'] });
+      message.success('Estimate imported successfully');
+      setImportModalOpen(false);
+      navigate(`/app/estimates/${estimate.id}/edit`);
+    },
+    onError: () => {
+      message.error('Failed to create estimate from import');
+    },
+  });
 
   // Fetch estimates
   const { data, isLoading } = useQuery({
@@ -148,20 +169,44 @@ const EstimatesListPage: React.FC = () => {
         >
           Estimates
         </h1>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          size="large"
-          onClick={() => navigate('/app/estimates/new')}
-          style={{
-            background: colors.primary,
-            fontWeight: 600,
-            height: 44,
-            borderRadius: 8,
-          }}
-        >
-          New Estimate
-        </Button>
+        <div style={{ flexShrink: 0 }}>
+          <Dropdown.Button
+            type="primary"
+            size="large"
+            onClick={() => navigate('/app/estimates/new')}
+            menu={{
+              items: [
+                {
+                  key: 'import-excel',
+                  label: 'Import from Excel',
+                  icon: <UploadOutlined />,
+                },
+              ],
+              onClick: ({ key }) => {
+                if (key === 'import-excel') setImportModalOpen(true);
+              },
+            }}
+            buttonsRender={([leftButton, rightButton]) => [
+              React.cloneElement(leftButton as React.ReactElement, {
+                style: {
+                  background: colors.primary,
+                  fontWeight: 600,
+                  height: 44,
+                  borderRadius: '8px 0 0 8px',
+                },
+              }),
+              React.cloneElement(rightButton as React.ReactElement, {
+                style: {
+                  background: colors.primary,
+                  height: 44,
+                  borderRadius: '0 8px 8px 0',
+                },
+              }),
+            ]}
+          >
+            <PlusOutlined /> New Estimate
+          </Dropdown.Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -244,6 +289,16 @@ const EstimatesListPage: React.FC = () => {
           })}
         />
       </Card>
+
+      <ImportExcelModal
+        open={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        onImport={(sections) => importMutation.mutate(sections)}
+        documentType="estimate"
+        onDownloadTemplate={estimateService.downloadExcelTemplate}
+        onParseFile={estimateService.parseExcelFile}
+        importing={importMutation.isPending}
+      />
     </motion.div>
   );
 };

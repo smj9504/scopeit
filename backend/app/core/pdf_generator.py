@@ -134,6 +134,19 @@ def prepare_invoice_data(invoice_data: Dict[str, Any]) -> Dict[str, Any]:
             item.setdefault("unit_price", 0)
             item.setdefault("total", float(item.get("quantity", 0)) * float(item.get("unit_price", 0)))
             item.setdefault("notes", [])
+            item.setdefault("images", [])
+
+    # Collect attached photos from all items
+    attached_photos = []
+    for section in sections:
+        for item in section["items"]:
+            for img in item.get("images", []):
+                if img.get("data"):
+                    attached_photos.append({
+                        "line_item_name": item.get("name", ""),
+                        "filename": img.get("filename", "photo"),
+                        "data": img["data"],
+                    })
 
     # Prepare adjustments
     adjustments = invoice_data.get("adjustments", [])
@@ -153,6 +166,7 @@ def prepare_invoice_data(invoice_data: Dict[str, Any]) -> Dict[str, Any]:
         "company": company,
         "customer": customer,
         "sections": sections,
+        "attached_photos": attached_photos,
         "adjustments": adjustments,
         "payments": payments,
         "subtotal": float(invoice_data.get("subtotal", 0)),
@@ -220,6 +234,19 @@ def prepare_estimate_data(estimate_data: Dict[str, Any]) -> Dict[str, Any]:
             item.setdefault("unit_price", 0)
             item.setdefault("total", float(item.get("quantity", 0)) * float(item.get("unit_price", 0)))
             item.setdefault("notes", [])
+            item.setdefault("images", [])
+
+    # Collect attached photos from all items
+    attached_photos = []
+    for section in sections:
+        for item in section["items"]:
+            for img in item.get("images", []):
+                if img.get("data"):
+                    attached_photos.append({
+                        "line_item_name": item.get("name", ""),
+                        "filename": img.get("filename", "photo"),
+                        "data": img["data"],
+                    })
 
     # Prepare adjustments
     adjustments = estimate_data.get("adjustments", [])
@@ -236,6 +263,7 @@ def prepare_estimate_data(estimate_data: Dict[str, Any]) -> Dict[str, Any]:
         "company": company,
         "customer": customer,
         "sections": sections,
+        "attached_photos": attached_photos,
         "adjustments": adjustments,
         "subtotal": float(estimate_data.get("subtotal", 0)),
         "taxable_subtotal": float(estimate_data.get("taxable_subtotal", 0)),
@@ -283,6 +311,19 @@ def generate_estimate_html(
 
 def generate_pdf(html_content: str) -> BytesIO:
     """Generate PDF from HTML content"""
+    import os
+    import platform
+
+    # Fix fontconfig/GTK on Windows: ensure runtime paths are configured
+    if platform.system() == "Windows":
+        gtk_root = r"C:\Program Files\GTK3-Runtime Win64"
+        if os.path.isdir(gtk_root):
+            if not os.environ.get("FONTCONFIG_FILE"):
+                os.environ["FONTCONFIG_FILE"] = os.path.join(gtk_root, "etc", "fonts", "fonts.conf")
+            gtk_bin = os.path.join(gtk_root, "bin")
+            if gtk_bin not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = gtk_bin + os.pathsep + os.environ.get("PATH", "")
+
     # Lazy import to avoid GTK initialization issues on Windows when only generating HTML
     from weasyprint import HTML
 

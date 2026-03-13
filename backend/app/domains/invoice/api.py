@@ -1,8 +1,8 @@
 """
 ScopeIt - Invoice API Routes
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from pydantic import BaseModel, Field
@@ -59,6 +59,7 @@ class InvoiceItemCreate(BaseModel):
     is_taxable: bool = Field(default=True, alias="isTaxable")
     order_index: int = Field(default=0, alias="orderIndex")
     notes: Optional[List[str]] = None
+    images: Optional[List[dict]] = None  # [{"filename": "...", "data": "base64..."}]
 
     model_config = {"populate_by_name": True}
 
@@ -104,6 +105,7 @@ class InvoiceItemResponse(BaseModel):
     isTaxable: bool
     orderIndex: int
     notes: Optional[List[str]] = []
+    images: Optional[List[dict]] = []
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -303,6 +305,7 @@ def serialize_invoice(invoice: Invoice) -> dict:
                 "isTaxable": item.is_taxable,
                 "orderIndex": item.order_index,
                 "notes": item.notes or [],
+                "images": item.images or [],
             })
             section_subtotal += item.total
         section_data["subtotal"] = section_subtotal
@@ -485,6 +488,38 @@ async def get_pdf_templates():
     return get_template_info()
 
 
+@router.get("/excel-template")
+async def download_invoice_excel_template():
+    """Download Excel template for invoice import"""
+    from app.common.excel_service import generate_template
+
+    buffer = generate_template("invoice")
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": "attachment; filename=scopeit_invoice_template.xlsx"
+        },
+    )
+
+
+@router.post("/import-excel")
+async def parse_invoice_excel(
+    file: UploadFile = File(...),
+):
+    """Parse uploaded Excel file and return preview data for invoice import"""
+    from app.common.excel_service import parse_excel_file
+
+    if not file.filename.endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Please upload an Excel file (.xlsx)")
+
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Maximum size is 5MB.")
+
+    return parse_excel_file(contents)
+
+
 @router.get("/{invoice_id}", response_model=InvoiceResponse)
 async def get_invoice(
     invoice_id: str,
@@ -590,6 +625,7 @@ async def create_invoice(
                 is_taxable=item_data.is_taxable,
                 order_index=item_data.order_index,
                 notes=item_data.notes or [],
+                images=item_data.images or [],
             )
             db.add(item)
 
@@ -676,6 +712,7 @@ async def update_invoice(
                 is_taxable=item_data.is_taxable,
                 order_index=item_data.order_index,
                 notes=item_data.notes or [],
+                images=item_data.images or [],
             )
             db.add(item)
 
@@ -1098,6 +1135,7 @@ def _prepare_invoice_pdf_data(invoice: Invoice, company: Company, db: Session) -
                 "total": float(item.total) if item.total else 0,
                 "is_taxable": item.is_taxable,
                 "notes": item.notes or [],
+                "images": item.images or [],
             })
         sections_data.append({
             "name": section.name or "",
