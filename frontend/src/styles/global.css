@@ -309,6 +309,28 @@ a {
   min-height: auto !important;
 }
 
+/* Compact/inline-edit table inputs - use 13px font, 28px height */
+.compact-table .ant-input,
+.compact-table .ant-input-number,
+.compact-table .ant-input-number-input,
+.compact-table .ant-select-selector,
+.estimate-compact-table .ant-input,
+.estimate-compact-table .ant-input-number,
+.estimate-compact-table .ant-input-number-input,
+.estimate-compact-table .ant-select-selector,
+.ant-table-small .ant-input,
+.ant-table-small .ant-input-number,
+.ant-table-small .ant-input-number-input,
+.ant-table-small .ant-select-selector {
+  font-size: 13px !important;
+  height: 28px !important;
+}
+
+.estimate-compact-table .ant-input-number-input,
+.ant-table-small .ant-input-number-input {
+  height: 26px !important;
+}
+
 /* Modal Overrides */
 .ant-modal-content {
   border-radius: 12px !important;
@@ -332,61 +354,61 @@ a {
   font-weight: 500 !important;
 }
 
-/* InputNumber - Match Select/Input height */
+/* Consistent font-size for all form inputs */
+.ant-input,
+.ant-input-number-input,
+.ant-select-selector,
 .ant-input-number {
-  height: 40px !important;
-}
-
-.ant-input-number-input {
-  height: 38px !important;
+  font-size: 14px !important;
   font-family: inherit !important;
 }
 
-.ant-input-number-lg {
-  height: 44px !important;
+.ant-picker {
+  font-size: 14px !important;
 }
 
-.ant-input-number-lg .ant-input-number-input {
-  height: 42px !important;
-  font-size: 16px !important;
+.ant-picker-input > input {
+  font-size: 14px !important;
 }
 
-.ant-input-number-sm {
+/* Consistent height for all form controls - 36px default */
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-select-selector,
+.ant-input-number,
+.ant-picker {
+  height: 36px !important;
+}
+
+/* Input inside affix-wrapper should fill parent, not force its own height */
+.ant-input-affix-wrapper > .ant-input {
+  height: auto !important;
+}
+
+.ant-input-number-input {
+  height: 34px !important;
+}
+
+/* Size="small" variant - 32px */
+.ant-input-number-sm,
+.ant-input-sm,
+.ant-input-affix-wrapper-sm,
+.ant-select-sm .ant-select-selector,
+.ant-picker-small {
   height: 32px !important;
 }
 
 .ant-input-number-sm .ant-input-number-input {
   height: 30px !important;
+}
+
+/* Consistent label font-size */
+.ant-form-item-label > label {
   font-size: 14px !important;
 }
 
-/* AutoComplete - Match InputNumber height */
-.ant-select-auto-complete .ant-select-selector {
-  height: 40px !important;
-}
-
-.ant-select-auto-complete .ant-select-selection-search-input {
-  height: 38px !important;
-}
-
-/* Touch-friendly Ant Design inputs - use size prop for height control */
-/* Only set font-size to prevent iOS zoom, let size prop handle height */
-.ant-input,
-.ant-input-number-input,
-.ant-select-selector,
-.ant-input-number {
-  font-size: 16px !important; /* Prevents zoom on iOS */
-  font-family: inherit !important;
-}
-
-.ant-picker {
-  min-height: var(--touch-target-min) !important;
-  font-size: 16px !important; /* Prevents zoom on iOS */
-}
-
-/* Ant Design Button minimum touch target */
+/* Ant Design Button */
 .ant-btn {
-  min-height: var(--touch-target-min);
   touch-action: manipulation;
 }
 
@@ -567,6 +589,16 @@ a {
     padding: 0 var(--spacing-md);
   }
 
+  /* Mobile: 16px font-size to prevent iOS zoom on focus */
+  .ant-input,
+  .ant-input-number-input,
+  .ant-select-selector,
+  .ant-input-number,
+  .ant-picker,
+  .ant-picker-input > input {
+    font-size: 16px !important;
+  }
+
   /* Ant Design Table mobile adjustments */
   .ant-table {
     font-size: 13px !important;
@@ -600,7 +632,7 @@ a {
 
   .ant-modal-footer {
     flex-shrink: 0 !important;
-    padding: 12px 16px !important;
+    padding: 12px 24px !important;
     padding-bottom: calc(12px + var(--sab)) !important;
     border-top: 1px solid #e5e7eb !important;
     display: flex !important;
@@ -612,25 +644,41 @@ a {
     margin: 0 !important;
   }
 
+  /* Ensure custom footer wrapper divs expand to fill available width */
+  .ant-modal-footer > div {
+    flex: 1 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .ant-modal-footer > div .ant-btn {
+    flex: 1 !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+  }
+
   /* Form layout mobile */
   .ant-form-item {
     margin-bottom: 16px !important;
   }
 
-  /* Mobile form inputs - larger touch targets */
+  /* Mobile form inputs - consistent 36px height */
   .ant-modal .ant-input,
   .ant-modal .ant-input-number,
   .ant-modal .ant-select-selector,
-  .ant-modal .ant-input-affix-wrapper {
-    min-height: 44px !important;
+  .ant-modal .ant-input-affix-wrapper,
+  .ant-modal .ant-picker {
+    height: 36px !important;
   }
 
   .ant-modal .ant-input-number-input {
-    min-height: 42px !important;
+    height: 34px !important;
   }
 
   .ant-modal .ant-input-textarea textarea {
     min-height: 80px !important;
+    height: auto !important;
   }
 
   /* Mobile switch touch target */
@@ -639,14 +687,14 @@ a {
     min-height: 26px !important;
   }
 
-  /* Mobile modal form grid layouts */
+  /* Mobile modal form label - consistent 14px */
   .ant-modal .ant-form-item-label > label {
-    font-size: 13px !important;
+    font-size: 14px !important;
   }
 
-  /* Mobile modal header */
+  /* Mobile modal header - match body horizontal padding so title aligns with content */
   .ant-modal-header {
-    padding: 14px 16px !important;
+    padding: 14px 24px !important;
   }
 
   .ant-modal-title {
@@ -846,6 +894,80 @@ a {
 :focus-visible {
   outline: 2px solid #111827;
   outline-offset: 2px;
+}
+
+/* ===== Auth Pages ===== */
+
+/*
+ * .auth-page-main: the flex container that centers the form card.
+ * On mobile we switch to flex-start so the form scrolls naturally
+ * when the virtual keyboard is open and the viewport shrinks.
+ */
+.auth-page-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.auth-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 40px;
+}
+
+/*
+ * Auth inputs override: force 16px font-size and 44px min-height
+ * on auth pages at all times (not just mobile) so iOS never zooms,
+ * and touch targets are always met. The global 36px height override
+ * is reset here for auth inputs.
+ */
+.auth-card .ant-input,
+.auth-card .ant-input-affix-wrapper,
+.auth-card .ant-input-password {
+  font-size: 16px !important;
+  min-height: 44px !important;
+  height: auto !important;
+}
+
+.auth-card .ant-input-affix-wrapper > .ant-input {
+  font-size: 16px !important;
+  height: auto !important;
+  min-height: unset !important;
+}
+
+/* Button touch targets */
+.auth-card .ant-btn-lg,
+.auth-card .ant-btn {
+  min-height: 44px !important;
+}
+
+@media (max-width: 767px) {
+  .auth-page-main {
+    align-items: flex-start;
+    padding: 16px;
+    /* Extra top padding so card is not flush against header */
+    padding-top: 24px;
+  }
+
+  .auth-card {
+    padding: 24px 20px;
+    border-radius: 10px;
+  }
+
+  /* Reduce heading size slightly on narrow phones */
+  .auth-card h1 {
+    font-size: 20px !important;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* Tablet: keep centered, slightly less padding than desktop */
+  .auth-page-main {
+    padding: 32px 24px;
+  }
 }
 
 /* ===== Print Styles ===== */

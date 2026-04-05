@@ -2,7 +2,7 @@
  * ScopeIt - Customer Selector Component
  * Allows users to select an existing customer or input customer details directly
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   Select,
@@ -19,6 +19,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerService } from '@/services/customerService';
 import type { Customer, CustomerCreate } from '@/types/entities';
 import { colors, fonts, borderRadius } from '@/styles/theme';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 // Simple debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -63,6 +64,7 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
   onCustomerCreated,
 }) => {
   const { message } = App.useApp();
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
 
   // State
@@ -83,17 +85,21 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
   });
 
   // Sync internal state when value prop changes (e.g., when loading existing estimate)
+  // Use a ref to avoid re-syncing values we just pushed up via onChange
+  const lastPushedRef = useRef<string>('');
+
   useEffect(() => {
-    if (value) {
-      setSelectedCustomerId(value.customerId);
-      setIsManualEntry(!value.customerId && !!value.name);
-      setDirectInput({
-        name: value.name || '',
-        email: value.email || '',
-        phone: value.phone || '',
-        address: value.address || '',
-      });
-    }
+    if (!value) return;
+    const fingerprint = `${value.customerId}|${value.name}|${value.email}|${value.phone}|${value.address}`;
+    if (fingerprint === lastPushedRef.current) return; // skip — we caused this change
+    setSelectedCustomerId(value.customerId);
+    setIsManualEntry(!value.customerId && !!value.name);
+    setDirectInput({
+      name: value.name || '',
+      email: value.email || '',
+      phone: value.phone || '',
+      address: value.address || '',
+    });
   }, [value?.customerId, value?.name, value?.email, value?.phone, value?.address]);
 
   // Query for searching customers
@@ -166,23 +172,27 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
         .filter(Boolean)
         .join(', ');
 
-      onChange?.({
+      const data: CustomerData = {
         customerId: selectedCustomer.id,
         name: selectedCustomer.name,
         email: selectedCustomer.email,
         phone: selectedCustomer.phone,
         address: fullAddress,
-      });
+      };
+      lastPushedRef.current = `${data.customerId}|${data.name}|${data.email}|${data.phone}|${data.address}`;
+      onChange?.(data);
     }
   }, [selectedCustomer, isManualEntry, onChange]);
 
   // Update parent when direct input changes
   useEffect(() => {
     if (isManualEntry) {
-      onChange?.({
+      const data: CustomerData = {
         customerId: undefined,
         ...directInput,
-      });
+      };
+      lastPushedRef.current = `${data.customerId}|${data.name}|${data.email}|${data.phone}|${data.address}`;
+      onChange?.(data);
     }
   }, [directInput, isManualEntry, onChange]);
 
@@ -405,8 +415,10 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
             onClick={() => handleManualEntryChange(true)}
             disabled={disabled}
             style={{
-              padding: 0,
-              height: 'auto',
+              padding: '0 4px',
+              minHeight: 44,
+              display: 'inline-flex',
+              alignItems: 'center',
               color: colors.primary,
               fontWeight: 500,
             }}
@@ -425,8 +437,10 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
               onClick={() => handleManualEntryChange(false)}
               disabled={disabled}
               style={{
-                padding: 0,
-                height: 'auto',
+                padding: '0 4px',
+                minHeight: 44,
+                display: 'inline-flex',
+                alignItems: 'center',
                 color: colors.textSecondary,
                 alignSelf: 'flex-start',
                 marginBottom: 4,
@@ -447,7 +461,7 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
               }}
             />
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
               <Input
                 type="email"
                 value={directInput.email}
@@ -493,7 +507,7 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
                 type="default"
                 icon={<SaveOutlined />}
                 onClick={() => setSaveModalOpen(true)}
-                style={{ alignSelf: 'flex-start' }}
+                style={isMobile ? { width: '100%', minHeight: 44 } : { alignSelf: 'flex-start' }}
               >
                 Save to Customer List
               </Button>
@@ -507,21 +521,33 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
         title="Save Customer"
         open={saveModalOpen}
         onCancel={() => setSaveModalOpen(false)}
-        footer={[
-          <Button key="cancel" onClick={() => setSaveModalOpen(false)}>
-            No, Just Use Once
-          </Button>,
-          <Button
-            key="save"
-            type="primary"
-            icon={<SaveOutlined />}
-            onClick={handleSaveCustomer}
-            loading={createCustomerMutation.isPending}
-            style={{ background: colors.primary }}
+        footer={
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 8,
+            }}
           >
-            Yes, Save Customer
-          </Button>,
-        ]}
+            <Button
+              key="cancel"
+              onClick={() => setSaveModalOpen(false)}
+              style={{ flex: '1 1 auto' }}
+            >
+              No, Just Use Once
+            </Button>
+            <Button
+              key="save"
+              type="primary"
+              icon={<SaveOutlined />}
+              onClick={handleSaveCustomer}
+              loading={createCustomerMutation.isPending}
+              style={{ background: colors.primary, flex: '1 1 auto' }}
+            >
+              Yes, Save Customer
+            </Button>
+          </div>
+        }
       >
         <div style={{ padding: '16px 0' }}>
           <Text style={{ fontSize: 15 }}>

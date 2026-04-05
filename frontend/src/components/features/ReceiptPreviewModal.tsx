@@ -3,7 +3,7 @@
  * Displays a preview of payment receipts with download functionality
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal, Select, Button, Spin, Space, Tooltip, message } from 'antd';
+import { Modal, Select, Button, Spin, Space, Tooltip, App } from 'antd';
 import {
   DownloadOutlined,
   PrinterOutlined,
@@ -11,6 +11,8 @@ import {
   CompressOutlined,
 } from '@ant-design/icons';
 import { colors, borderRadius } from '@/styles/theme';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { formatCurrency } from '@/utils/formatters';
 import { invoiceService } from '@/services/invoiceService';
 import type { PdfTemplateId, PdfTemplateInfo, Payment } from '@/types/entities';
 import dayjs from 'dayjs';
@@ -38,6 +40,9 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   templates,
   templatesLoading = false,
 }) => {
+  const { message } = App.useApp();
+  const isMobile = useIsMobile();
+  const isTablet = !isMobile && typeof window !== 'undefined' && window.innerWidth < 1024;
   const [selectedTemplate, setSelectedTemplate] = useState<PdfTemplateId>(defaultTemplate);
   const [previewHtml, setPreviewHtml] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -128,12 +133,12 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
     ? dayjs(payment.paymentDate).format('MMM D, YYYY')
     : 'No date';
 
-  const paymentAmountDisplay = `$${Number(payment.amount || 0).toFixed(2)}`;
+  const paymentAmountDisplay = formatCurrency(Number(payment.amount || 0));
 
   return (
     <Modal
       title={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 600 }}>Payment Receipt</span>
           <span
             style={{
@@ -160,25 +165,49 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
       }
       open={open}
       onCancel={onClose}
-      width={isFullscreen ? '100%' : 900}
-      style={isFullscreen ? { top: 0, maxWidth: '100%', paddingBottom: 0 } : undefined}
+      width={
+        isFullscreen
+          ? '100%'
+          : isMobile
+          ? '100%'
+          : isTablet
+          ? '92vw'
+          : 900
+      }
+      style={
+        isFullscreen
+          ? { top: 0, maxWidth: '100%', paddingBottom: 0 }
+          : isMobile
+          ? { top: 0, maxWidth: '100%', margin: 0, paddingBottom: 0 }
+          : undefined
+      }
       styles={{
+        header: {
+          paddingBottom: 16,
+          marginBottom: 0,
+        },
         body: {
           padding: 0,
-          height: isFullscreen ? 'calc(100vh - 110px)' : 600,
+          height: isFullscreen
+            ? 'calc(100vh - 110px)'
+            : isMobile
+            ? 'calc(100dvh - 110px)'
+            : 600,
           overflow: 'hidden',
         },
       }}
       footer={null}
-      centered={!isFullscreen}
+      centered={!isFullscreen && !isMobile}
     >
       {/* Toolbar */}
       <div
         style={{
           display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
           justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '12px 16px',
+          alignItems: isMobile ? 'stretch' : 'center',
+          gap: isMobile ? 8 : 0,
+          padding: isMobile ? '10px 12px' : '12px 16px',
           borderBottom: `1px solid ${colors.border}`,
           background: colors.bgLight,
         }}
@@ -189,7 +218,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
           <Select
             value={selectedTemplate}
             onChange={setSelectedTemplate}
-            style={{ width: 180 }}
+            style={{ width: isMobile ? 160 : 180 }}
             loading={templatesLoading}
             options={templates.map((t) => ({
               value: t.id,
@@ -199,18 +228,20 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
         </Space>
 
         {/* Actions */}
-        <Space>
+        <Space style={isMobile ? { display: 'flex', justifyContent: 'flex-end' } : undefined}>
           <Tooltip title="Print">
             <Button
               icon={<PrinterOutlined />}
               onClick={handlePrint}
               disabled={loading}
+              style={{ minWidth: 44, minHeight: 44 }}
             />
           </Tooltip>
           <Tooltip title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
             <Button
               icon={isFullscreen ? <CompressOutlined /> : <ExpandOutlined />}
               onClick={toggleFullscreen}
+              style={{ minWidth: 44, minHeight: 44 }}
             />
           </Tooltip>
           <Button
@@ -219,9 +250,9 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
             onClick={handleDownload}
             loading={downloading}
             disabled={loading}
-            style={{ background: '#16a34a' }}
+            style={isMobile ? { flex: 1, minHeight: 44, background: '#16a34a' } : { background: '#16a34a' }}
           >
-            Download Receipt
+            {isMobile ? 'Download' : 'Download Receipt'}
           </Button>
         </Space>
       </div>
@@ -234,7 +265,8 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
           background: '#525659',
           display: 'flex',
           justifyContent: 'center',
-          padding: 24,
+          padding: isMobile ? 8 : 24,
+          WebkitOverflowScrolling: 'touch',
         }}
       >
         {loading ? (
@@ -251,8 +283,8 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
         ) : (
           <div
             style={{
-              width: '8.5in',
-              minHeight: '11in',
+              width: isMobile ? '100%' : '8.5in',
+              minHeight: isMobile ? 'auto' : '11in',
               background: '#fff',
               boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
               borderRadius: borderRadius.sm,
@@ -265,8 +297,9 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
               style={{
                 width: '100%',
                 height: '100%',
-                minHeight: '11in',
+                minHeight: isMobile ? '80vh' : '11in',
                 border: 'none',
+                display: 'block',
               }}
               title="Receipt Preview"
             />

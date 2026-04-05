@@ -3,7 +3,7 @@
  */
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Form, Input, Button, message } from 'antd';
+import { Form, Input, Button, App } from 'antd';
 import { MailOutlined, LockOutlined, UserOutlined, ShopOutlined, GoogleOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
@@ -21,6 +21,7 @@ interface RegisterForm {
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const RegisterPage: React.FC = () => {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const navigate = useNavigate();
@@ -93,29 +94,14 @@ const RegisterPage: React.FC = () => {
       </header>
 
       {/* Content */}
-      <main
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 24,
-        }}
-      >
+      <main className="auth-page-main">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
           style={{ width: '100%', maxWidth: 400 }}
         >
-          <div
-            style={{
-              background: colors.bgWhite,
-              border: `1px solid ${colors.border}`,
-              borderRadius: 12,
-              padding: 40,
-            }}
-          >
+          <div className="auth-card">
             <div style={{ textAlign: 'center', marginBottom: 32 }}>
               <h1
                 style={{
@@ -145,7 +131,6 @@ const RegisterPage: React.FC = () => {
               block
               size="large"
               style={{
-                height: 44,
                 fontWeight: 600,
                 marginBottom: 24,
                 display: 'flex',
@@ -185,6 +170,7 @@ const RegisterPage: React.FC = () => {
                 <Input
                   prefix={<UserOutlined style={{ color: colors.textMuted }} />}
                   placeholder="Your name"
+                  autoComplete="name"
                 />
               </Form.Item>
 
@@ -195,6 +181,7 @@ const RegisterPage: React.FC = () => {
                 <Input
                   prefix={<ShopOutlined style={{ color: colors.textMuted }} />}
                   placeholder="Company name"
+                  autoComplete="organization"
                 />
               </Form.Item>
 
@@ -222,6 +209,7 @@ const RegisterPage: React.FC = () => {
                 <Input.Password
                   prefix={<LockOutlined style={{ color: colors.textMuted }} />}
                   placeholder="Password (min 8 characters)"
+                  autoComplete="new-password"
                 />
               </Form.Item>
 
@@ -232,7 +220,6 @@ const RegisterPage: React.FC = () => {
                   loading={loading}
                   block
                   style={{
-                    height: 44,
                     fontWeight: 600,
                     background: colors.primary,
                   }}

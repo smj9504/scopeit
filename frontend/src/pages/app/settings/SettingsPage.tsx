@@ -46,6 +46,7 @@ import { settingsService } from '@/services/settingsService';
 import { companyService } from '@/services/companyService';
 import { authService } from '@/services/authService';
 import { StatusMigrationModal, type StatusType } from '@/components/settings/StatusMigrationModal';
+import CompanyDocumentsSettings from '@/components/settings/CompanyDocumentsSettings';
 import type {
   EstimateStatusConfig,
   InvoiceStatusConfig,
@@ -329,7 +330,7 @@ const EstimateStatusesSettings: React.FC = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h2 style={{ fontFamily: fonts.heading, fontSize: 18, fontWeight: 600, marginBottom: 4 }}>
+          <h2 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
             Estimate Statuses
           </h2>
           <p style={{ color: colors.textSecondary, margin: 0 }}>
@@ -606,7 +607,7 @@ const InvoiceStatusesSettings: React.FC = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h2 style={{ fontFamily: fonts.heading, fontSize: 18, fontWeight: 600, marginBottom: 4 }}>
+          <h2 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
             Invoice Statuses
           </h2>
           <p style={{ color: colors.textSecondary, margin: 0 }}>
@@ -880,7 +881,7 @@ const CategoriesSettings: React.FC = () => {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h2 style={{ fontFamily: fonts.heading, fontSize: 18, fontWeight: 600, marginBottom: 4 }}>
+          <h2 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
             Line Item Categories
           </h2>
           <p style={{ color: colors.textSecondary, margin: 0 }}>
@@ -958,6 +959,7 @@ const CategoriesSettings: React.FC = () => {
 const CustomizationSettings: React.FC = () => {
   const queryClient = useQueryClient();
   const { message } = App.useApp();
+  const isMobile = useIsMobile();
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 5 },
@@ -1636,15 +1638,15 @@ const CustomizationSettings: React.FC = () => {
     {
       key: 'estimate-statuses',
       label: (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          <div>
-            <div style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, color: colors.textPrimary }}>
-              Estimate Statuses
-            </div>
+        <div>
+          <div style={{ fontFamily: fonts.heading, fontSize: isMobile ? 14 : 16, fontWeight: 600, color: colors.textPrimary }}>
+            Estimate Statuses
+          </div>
+          {!isMobile && (
             <div style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
               Customize the statuses available for your estimates
             </div>
-          </div>
+          )}
         </div>
       ),
       extra: (
@@ -1658,7 +1660,7 @@ const CustomizationSettings: React.FC = () => {
           }}
           style={{ background: colors.primary }}
         >
-          Add Status
+          {isMobile ? 'Add' : 'Add Status'}
         </Button>
       ),
       children: (
@@ -1690,15 +1692,15 @@ const CustomizationSettings: React.FC = () => {
     {
       key: 'invoice-statuses',
       label: (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          <div>
-            <div style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, color: colors.textPrimary }}>
-              Invoice Statuses
-            </div>
+        <div>
+          <div style={{ fontFamily: fonts.heading, fontSize: isMobile ? 14 : 16, fontWeight: 600, color: colors.textPrimary }}>
+            Invoice Statuses
+          </div>
+          {!isMobile && (
             <div style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
               Customize the statuses available for your invoices
             </div>
-          </div>
+          )}
         </div>
       ),
       extra: (
@@ -1712,7 +1714,7 @@ const CustomizationSettings: React.FC = () => {
           }}
           style={{ background: colors.primary }}
         >
-          Add Status
+          {isMobile ? 'Add' : 'Add Status'}
         </Button>
       ),
       children: (
@@ -1744,15 +1746,15 @@ const CustomizationSettings: React.FC = () => {
     {
       key: 'categories',
       label: (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-          <div>
-            <div style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, color: colors.textPrimary }}>
-              Line Item Categories
-            </div>
+        <div>
+          <div style={{ fontFamily: fonts.heading, fontSize: isMobile ? 14 : 16, fontWeight: 600, color: colors.textPrimary }}>
+            Line Item Categories
+          </div>
+          {!isMobile && (
             <div style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
               Organize your line items with custom categories
             </div>
-          </div>
+          )}
         </div>
       ),
       extra: (
@@ -1766,7 +1768,7 @@ const CustomizationSettings: React.FC = () => {
           }}
           style={{ background: colors.primary }}
         >
-          Add Category
+          {isMobile ? 'Add' : 'Add Category'}
         </Button>
       ),
       children: (
@@ -2002,7 +2004,7 @@ const CompanySettings: React.FC = () => {
 
   return (
     <div>
-      <h2 style={{ fontFamily: fonts.heading, fontSize: 18, fontWeight: 600, marginBottom: 24 }}>
+      <h2 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 24 }}>
         Company Information
       </h2>
 
@@ -2196,14 +2198,14 @@ const TaxSettings: React.FC = () => {
 
   return (
     <div>
-      <h2 style={{ fontFamily: fonts.heading, fontSize: 18, fontWeight: 600, marginBottom: 24 }}>
+      <h2 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 24 }}>
         Tax & Defaults
       </h2>
 
       <Form form={form} layout="vertical" style={{ maxWidth: 500 }}>
         <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12 }}>
           <Form.Item name="defaultTaxRate" label="Default Tax Rate (%)" style={{ width: isMobile ? '100%' : 180 }}>
-            <InputNumber min={0} max={100} precision={2} placeholder="8.25" style={{ width: '100%' }} />
+            <InputNumber min={0} max={100} precision={2} placeholder="8.25" style={{ width: '100%' }} inputMode="decimal" />
           </Form.Item>
           <Form.Item name="defaultTaxLabel" label="Tax Label" style={{ flex: 1 }}>
             <Input placeholder="Sales Tax" />
@@ -2237,7 +2239,7 @@ const TaxSettings: React.FC = () => {
               { type: 'number', min: 1, message: 'Min 1' },
             ]}
           >
-            <InputNumber min={1} placeholder="1001" style={{ width: '100%' }} />
+            <InputNumber min={1} placeholder="1001" style={{ width: '100%' }} inputMode="numeric" />
           </Form.Item>
         </div>
 
@@ -2262,7 +2264,7 @@ const TaxSettings: React.FC = () => {
               { type: 'number', min: 1, message: 'Min 1' },
             ]}
           >
-            <InputNumber min={1} placeholder="1001" style={{ width: '100%' }} />
+            <InputNumber min={1} placeholder="1001" style={{ width: '100%' }} inputMode="numeric" />
           </Form.Item>
         </div>
 
@@ -2273,11 +2275,11 @@ const TaxSettings: React.FC = () => {
         </h3>
 
         <Form.Item name="defaultEstimateValidityDays" label="Estimate Valid For (days)">
-          <InputNumber min={1} placeholder="30" style={{ width: 120 }} />
+          <InputNumber min={1} placeholder="30" style={{ width: isMobile ? '100%' : 120 }} inputMode="numeric" />
         </Form.Item>
 
         <Form.Item name="defaultInvoiceDueDays" label="Invoice Due In (days)">
-          <InputNumber min={1} placeholder="30" style={{ width: 120 }} />
+          <InputNumber min={1} placeholder="30" style={{ width: isMobile ? '100%' : 120 }} inputMode="numeric" />
         </Form.Item>
 
         <Button
@@ -2298,7 +2300,7 @@ const TaxSettings: React.FC = () => {
 const SubscriptionSettings: React.FC = () => {
   return (
     <div>
-      <h2 style={{ fontFamily: fonts.heading, fontSize: 18, fontWeight: 600, marginBottom: 24 }}>
+      <h2 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 24 }}>
         Subscription
       </h2>
 
@@ -2361,6 +2363,11 @@ const AccountSettings: React.FC = () => {
       value: 'professional',
       label: 'Professional',
       description: 'Corporate design with structured layout',
+    },
+    {
+      value: 'detailed',
+      label: 'Detailed',
+      description: 'Section-based layout with subtotals and line-item details',
     },
   ];
 
@@ -2425,7 +2432,7 @@ const AccountSettings: React.FC = () => {
 
   return (
     <div>
-      <h2 style={{ fontFamily: fonts.heading, fontSize: 18, fontWeight: 600, marginBottom: 24 }}>
+      <h2 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 24 }}>
         Account
       </h2>
 
@@ -2466,14 +2473,15 @@ const AccountSettings: React.FC = () => {
               onClick={() => setSelectedTemplate(template.value)}
               style={{
                 flex: '1 1 140px',
-                minWidth: 140,
-                maxWidth: 180,
-                padding: 16,
+                minWidth: 130,
+                maxWidth: 200,
+                padding: 14,
                 borderRadius: 8,
                 border: `2px solid ${selectedTemplate === template.value ? colors.primary : colors.border}`,
                 background: selectedTemplate === template.value ? `${colors.primary}08` : colors.bgWhite,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
+                position: 'relative',
               }}
             >
               <div
@@ -2567,12 +2575,14 @@ const AccountSettings: React.FC = () => {
 const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const isMobile = useIsMobile();
 
   const getActiveKey = () => {
     const path = location.pathname;
     if (path === '/app/settings' || path === '/app/settings/') return 'company';
     if (path.includes('/tax')) return 'tax';
     if (path.includes('/customization')) return 'customization';
+    if (path.includes('/documents')) return 'documents';
     if (path.includes('/subscription')) return 'subscription';
     if (path.includes('/account')) return 'account';
     return 'company';
@@ -2589,6 +2599,9 @@ const SettingsPage: React.FC = () => {
       case 'customization':
         navigate('/app/settings/customization');
         break;
+      case 'documents':
+        navigate('/app/settings/documents');
+        break;
       case 'subscription':
         navigate('/app/settings/subscription');
         break;
@@ -2602,13 +2615,14 @@ const SettingsPage: React.FC = () => {
     { key: 'company', label: 'Company' },
     { key: 'tax', label: 'Tax & Defaults' },
     { key: 'customization', label: 'Customization' },
+    { key: 'documents', label: 'Documents' },
     { key: 'subscription', label: 'Subscription' },
     { key: 'account', label: 'Account' },
   ];
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-      <h1 style={{ fontFamily: fonts.heading, fontSize: 24, fontWeight: 700, marginBottom: 24 }}>Settings</h1>
+      <h1 style={{ fontFamily: fonts.heading, fontSize: isMobile ? 20 : 24, fontWeight: 700, marginBottom: isMobile ? 16 : 24 }}>Settings</h1>
 
       <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
         <Tabs
@@ -2617,19 +2631,21 @@ const SettingsPage: React.FC = () => {
           onChange={handleTabChange}
           items={tabItems}
           tabBarStyle={{
-            padding: '0 0 0 20px',
+            padding: isMobile ? '0 0 0 12px' : '0 0 0 20px',
             marginBottom: 0,
             borderBottom: `1px solid ${colors.border}`,
-            minHeight: 56,
+            minHeight: isMobile ? 48 : 56,
+            overflowX: 'auto',
+            overflowY: 'hidden',
           }}
-          moreIcon={<span style={{ padding: '8px 0' }}>...</span>}
           style={{ width: '100%' }}
         />
-        <div style={{ padding: 24 }}>
+        <div style={{ padding: isMobile ? 16 : 24 }}>
           <Routes>
             <Route index element={<CompanySettings />} />
             <Route path="tax" element={<TaxSettings />} />
             <Route path="customization" element={<CustomizationSettings />} />
+            <Route path="documents" element={<CompanyDocumentsSettings />} />
             <Route path="subscription" element={<SubscriptionSettings />} />
             <Route path="account" element={<AccountSettings />} />
           </Routes>

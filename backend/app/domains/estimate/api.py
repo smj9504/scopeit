@@ -663,18 +663,16 @@ async def update_estimate(
             customer_email = customer.email
             customer_address = customer.full_address
 
-    # Update estimate fields
-    for field, value in data.model_dump(exclude_unset=True, exclude={'sections'}).items():
+    # Update estimate fields (exclude customer snapshot fields - handled separately below)
+    customer_fields = {'sections', 'customer_name', 'customer_email', 'customer_address'}
+    for field, value in data.model_dump(exclude_unset=True, exclude=customer_fields).items():
         if hasattr(estimate, field):
             setattr(estimate, field, value)
 
-    # Override customer fields with looked-up values
-    if customer_name:
-        estimate.customer_name = customer_name
-    if customer_email:
-        estimate.customer_email = customer_email
-    if customer_address:
-        estimate.customer_address = customer_address
+    # Set customer snapshot fields explicitly
+    estimate.customer_name = customer_name
+    estimate.customer_email = customer_email
+    estimate.customer_address = customer_address
 
     # Delete existing items and sections (items first to avoid FK constraint issues)
     db.query(EstimateItem).filter(EstimateItem.estimate_id == estimate_id).delete(synchronize_session=False)
@@ -1180,16 +1178,16 @@ def _prepare_estimate_pdf_data(estimate: Estimate, company: Company, db: Session
         "logo_url": company.logo_url or "",
     }
 
-    # Build customer info dict
+    # Build customer info dict - use snapshot fields as fallback when customer relationship is None
     customer_info = {
-        "name": customer.name if customer else "",
-        "address": customer.address_line1 if customer else "",
+        "name": customer.name if customer else (estimate.customer_name or ""),
+        "address": customer.address_line1 if customer else (estimate.customer_address or ""),
         "address_line2": customer.address_line2 if customer else "",
         "city": customer.city if customer else "",
         "state": customer.state if customer else "",
         "zipcode": customer.zipcode if customer else "",
         "phone": customer.phone if customer else "",
-        "email": customer.email if customer else "",
+        "email": customer.email if customer else (estimate.customer_email or ""),
     }
 
     # Build sections with items
@@ -1317,7 +1315,7 @@ async def get_pdf(
     pdf_bytes = generate_estimate_pdf(pdf_data, template_name)
 
     # Build filename
-    customer_name = estimate.customer.name if estimate.customer else "Customer"
+    customer_name = estimate.customer.name if estimate.customer else (estimate.customer_name or "Customer")
     filename = f"{customer_name} - Estimate {estimate.estimate_number}.pdf"
     # Clean filename
     filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.')).strip()

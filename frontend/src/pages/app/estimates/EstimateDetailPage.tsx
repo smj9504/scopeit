@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Card, Button, Tag, Descriptions, Table, Dropdown, Space, Divider,
-  Spin, Modal, Form, Input, InputNumber, Select, DatePicker, App, message
+  Spin, Modal, Form, Input, InputNumber, Select, DatePicker, App, Tooltip
 } from 'antd';
 import {
   EditOutlined,
@@ -20,14 +20,16 @@ import {
   PlusOutlined,
   DollarOutlined,
   DownOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { colors, fonts } from '@/styles/theme';
+import { formatCurrency } from '@/utils/formatters';
 import { useEstimateStatuses, getStatusDisplay } from '@/hooks/useSettings';
 import { estimateService } from '@/services/estimateService';
-import { useIsMobile } from '@/hooks/useIsMobile';
+import { useIsMobile, useIsNarrow } from '@/hooks/useIsMobile';
 import { useBackNav } from '@/hooks/useHeaderNav';
 import type { EstimateStatus, Adjustment, EstimatePayment } from '@/types/entities';
 
@@ -36,6 +38,7 @@ const EstimateDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const isNarrow = useIsNarrow();
   const { modal, message } = App.useApp();
   const [paymentForm] = Form.useForm();
   const [adjustmentForm] = Form.useForm();
@@ -220,17 +223,40 @@ const EstimateDetailPage: React.FC = () => {
     });
   };
 
-  const itemColumns = [
+  const allItemColumns = [
     {
       title: 'Description',
       dataIndex: 'name',
       key: 'name',
+      render: (name: string, record: any) => {
+        const desc = record.description;
+        const notes = record.notes;
+        const hasExtra = desc || (notes && notes.length > 0);
+        if (!hasExtra) return name;
+        const tooltipContent = (
+          <div style={{ maxWidth: 300 }}>
+            {desc && <div style={{ marginBottom: notes?.length ? 6 : 0 }}>{desc}</div>}
+            {notes?.map((n: string, i: number) => (
+              <div key={i} style={{ fontSize: 12, color: '#d1d5db', borderTop: i === 0 && desc ? '1px solid rgba(255,255,255,0.15)' : undefined, paddingTop: i === 0 && desc ? 4 : 0 }}>{n}</div>
+            ))}
+          </div>
+        );
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {name}
+            <Tooltip title={tooltipContent} placement="topLeft">
+              <InfoCircleOutlined style={{ fontSize: 13, color: colors.textMuted, cursor: 'pointer' }} />
+            </Tooltip>
+          </span>
+        );
+      },
     },
     {
       title: 'Unit',
       dataIndex: 'unit',
       key: 'unit',
       width: 80,
+      mobileHidden: true,
     },
     {
       title: 'Qty',
@@ -245,7 +271,8 @@ const EstimateDetailPage: React.FC = () => {
       key: 'unitPrice',
       width: 100,
       align: 'right' as const,
-      render: (price: number) => `$${Number(price || 0).toFixed(2)}`,
+      render: (price: number) => formatCurrency(Number(price || 0)),
+      mobileHidden: true,
     },
     {
       title: 'Total',
@@ -253,9 +280,13 @@ const EstimateDetailPage: React.FC = () => {
       key: 'total',
       width: 120,
       align: 'right' as const,
-      render: (total: number) => <span style={{ fontWeight: 600 }}>${Number(total || 0).toFixed(2)}</span>,
+      render: (total: number) => <span style={{ fontWeight: 600 }}>{formatCurrency(Number(total || 0))}</span>,
     },
   ];
+
+  const itemColumns = isMobile
+    ? allItemColumns.filter((col) => !(col as any).mobileHidden)
+    : allItemColumns;
 
   const moreMenuItems = [
     { key: 'duplicate', icon: <CopyOutlined />, label: 'Duplicate' },
@@ -334,9 +365,9 @@ const EstimateDetailPage: React.FC = () => {
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <h1 style={{ fontFamily: fonts.heading, fontSize: 24, fontWeight: 700, margin: 0 }}>
+          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+              <h1 style={{ fontFamily: fonts.heading, fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0 }}>
                 {estimate.estimateNumber}
               </h1>
               <Dropdown
@@ -377,22 +408,22 @@ const EstimateDetailPage: React.FC = () => {
                 </Tag>
               </Dropdown>
             </div>
-            <div style={{ color: colors.textSecondary }}>{estimate.title}</div>
+            <div style={{ color: colors.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{estimate.title}</div>
           </div>
 
           {/* Mobile: Record Payment button + Actions dropdown */}
           {isMobile ? (
-            <Space>
+            <Space style={{ flexShrink: 0 }}>
               <Button
                 icon={<DollarOutlined />}
                 type="primary"
-                style={{ background: colors.primary }}
+                style={{ background: colors.primary, minWidth: 44, height: 40 }}
                 onClick={() => setPaymentModalOpen(true)}
               >
-                Record Payment
+                Pay
               </Button>
               <Dropdown menu={{ items: mobileActionMenuItems, onClick: handleMenuClick }} trigger={['click']}>
-                <Button icon={<MoreOutlined />} />
+                <Button icon={<MoreOutlined />} style={{ minWidth: 44, height: 40 }} />
               </Dropdown>
             </Space>
           ) : (
@@ -419,17 +450,21 @@ const EstimateDetailPage: React.FC = () => {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }}>
+      <div style={{ display: 'flex', gap: isNarrow ? 16 : 24, flexWrap: 'wrap', flexDirection: isNarrow ? 'column' : 'row' }}>
         {/* Main Content */}
-        <div style={{ flex: 1, minWidth: isMobile ? 'auto' : 600 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           {/* Customer & Dates */}
-          <Card style={{ borderRadius: 12, marginBottom: 16 }}>
+          <Card style={{ borderRadius: 12, marginBottom: 16, overflow: 'hidden' }}>
             <Descriptions column={{ xs: 1, sm: 1, md: 1, lg: 2, xl: 3 }}>
               <Descriptions.Item label="Customer">
-                <div>
-                  <div style={{ fontWeight: 600 }}>{estimate.customerName || '-'}</div>
-                  <div style={{ color: colors.textSecondary, fontSize: 13 }}>{estimate.customerEmail}</div>
-                  <div style={{ color: colors.textSecondary, fontSize: 13 }}>{estimate.customerAddress}</div>
+                <div style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                  <div style={{ fontWeight: 600 }}>{estimate.customerName || '—'}</div>
+                  {estimate.customerEmail && (
+                    <div style={{ color: colors.textSecondary, fontSize: 13 }}>{estimate.customerEmail}</div>
+                  )}
+                  {estimate.customerAddress && (
+                    <div style={{ color: colors.textSecondary, fontSize: 13 }}>{estimate.customerAddress}</div>
+                  )}
                 </div>
               </Descriptions.Item>
               <Descriptions.Item label="Status">
@@ -516,19 +551,22 @@ const EstimateDetailPage: React.FC = () => {
           {sectionsWithItems.length > 0 ? (
             sectionsWithItems.map((section) => (
               <Card key={section.id} style={{ borderRadius: 12, marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <h3 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, margin: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12 }}>
+                  <h3 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                     {section.name}
                   </h3>
-                  <span style={{ fontWeight: 600 }}>${Number(section.subtotal || 0).toFixed(2)}</span>
+                  <span style={{ fontWeight: 600, flexShrink: 0 }}>{formatCurrency(Number(section.subtotal || 0))}</span>
                 </div>
-                <Table
-                  columns={itemColumns}
-                  dataSource={section.items}
-                  rowKey="id"
-                  pagination={false}
-                  size="small"
-                />
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <Table
+                    columns={itemColumns}
+                    dataSource={section.items}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                    style={{ minWidth: isMobile ? 320 : undefined }}
+                  />
+                </div>
               </Card>
             ))
           ) : (
@@ -549,20 +587,20 @@ const EstimateDetailPage: React.FC = () => {
         </div>
 
         {/* Summary Sidebar - Responsive */}
-        <Card style={{ borderRadius: 12, width: isMobile ? '100%' : 'auto', flex: isMobile ? 1 : '0 0 280px', flexShrink: 0, alignSelf: 'flex-start', minWidth: isMobile ? 'auto' : 280 }}>
+        <Card style={{ borderRadius: 12, width: isNarrow ? '100%' : 'auto', flex: isNarrow ? '1 1 auto' : '0 0 300px', flexShrink: 0, alignSelf: 'flex-start', minWidth: isNarrow ? 'auto' : 300 }}>
           <h3 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Summary</h3>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ color: colors.textSecondary }}>Subtotal</span>
-            <span>${Number(estimate.subtotal || 0).toFixed(2)}</span>
+            <span>{formatCurrency(Number(estimate.subtotal || 0))}</span>
           </div>
 
           {/* Adjustments */}
           {(estimate.adjustments || []).length > 0 && (
             <>
               {estimate.adjustments.map((adj: Adjustment) => (
-                <div key={adj.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div key={adj.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, alignItems: 'flex-start', flexWrap: 'wrap', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: '1 1 auto', minWidth: 0 }}>
                     <span style={{ color: adj.type === 'premium' ? '#16a34a' : '#dc2626' }}>
                       {adj.name} ({adj.type === 'premium' ? '+' : '-'}{Number(adj.percentage).toFixed(1)}%)
                     </span>
@@ -576,7 +614,7 @@ const EstimateDetailPage: React.FC = () => {
                     />
                   </div>
                   <span style={{ color: adj.type === 'premium' ? '#16a34a' : '#dc2626' }}>
-                    {adj.type === 'premium' ? '+' : '-'}${Number(adj.amount || 0).toFixed(2)}
+                    {adj.type === 'premium' ? '+' : '-'}{formatCurrency(Number(adj.amount || 0))}
                   </span>
                 </div>
               ))}
@@ -585,10 +623,9 @@ const EstimateDetailPage: React.FC = () => {
 
           <Button
             type="dashed"
-            size="small"
             icon={<PlusOutlined />}
             onClick={() => setAdjustmentModalOpen(true)}
-            style={{ width: '100%', marginBottom: 8 }}
+            style={{ width: '100%', marginBottom: 8, height: 40 }}
           >
             Add Premium/Discount
           </Button>
@@ -597,7 +634,7 @@ const EstimateDetailPage: React.FC = () => {
             <span style={{ color: colors.textSecondary }}>
               {estimate.taxLabel || 'Tax'} ({Number(estimate.taxRate || 0)}%)
             </span>
-            <span>${Number(estimate.taxAmount || 0).toFixed(2)}</span>
+            <span>{formatCurrency(Number(estimate.taxAmount || 0))}</span>
           </div>
 
           <Divider style={{ margin: '16px 0' }} />
@@ -605,7 +642,7 @@ const EstimateDetailPage: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
             <span style={{ fontWeight: 600, fontSize: 16 }}>Total</span>
             <span style={{ fontWeight: 700, fontSize: 20, fontFamily: fonts.heading }}>
-              ${Number(estimate.total || 0).toFixed(2)}
+              {formatCurrency(Number(estimate.total || 0))}
             </span>
           </div>
 
@@ -621,7 +658,7 @@ const EstimateDetailPage: React.FC = () => {
                         {payment.paymentDate ? dayjs(payment.paymentDate).format('MMM D, YYYY') : 'No date'}
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ color: '#16a34a', fontWeight: 500 }}>-${Number(payment.amount || 0).toFixed(2)}</span>
+                        <span style={{ color: '#16a34a', fontWeight: 500 }}>-{formatCurrency(Number(payment.amount || 0))}</span>
                         <Button
                           type="text"
                           size="small"
@@ -649,13 +686,13 @@ const EstimateDetailPage: React.FC = () => {
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
             <span style={{ color: colors.textSecondary }}>Amount Paid</span>
-            <span style={{ color: '#16a34a' }}>${Number(estimate.amountPaid || 0).toFixed(2)}</span>
+            <span style={{ color: '#16a34a' }}>{formatCurrency(Number(estimate.amountPaid || 0))}</span>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ fontWeight: 600 }}>Balance Due</span>
             <span style={{ fontWeight: 700, color: Number(estimate.balanceDue || 0) > 0 ? '#dc2626' : '#16a34a' }}>
-              ${Number(estimate.balanceDue || 0).toFixed(2)}
+              {formatCurrency(Number(estimate.balanceDue || 0))}
             </span>
           </div>
         </Card>

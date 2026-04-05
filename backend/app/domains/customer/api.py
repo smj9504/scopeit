@@ -12,6 +12,9 @@ from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.domains.user.models import User
 from app.domains.customer.models import Customer
+from app.domains.estimate.models import Estimate
+from app.domains.invoice.models import Invoice
+from app.domains.tools.modules.pdf_editor.models import SignRequest
 
 
 router = APIRouter()
@@ -238,3 +241,100 @@ async def delete_customer(
 
     db.delete(customer)
     db.commit()
+
+
+@router.get("/{customer_id}/documents")
+async def get_customer_documents(
+    customer_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all estimates, invoices, and sign requests for a customer"""
+    customer = db.query(Customer).filter(
+        and_(
+            Customer.id == customer_id,
+            Customer.company_id == current_user.company_id,
+        )
+    ).first()
+
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    estimates = (
+        db.query(Estimate)
+        .filter(
+            and_(
+                Estimate.customer_id == customer_id,
+                Estimate.company_id == current_user.company_id,
+            )
+        )
+        .order_by(Estimate.created_at.desc())
+        .limit(100)
+        .all()
+    )
+
+    invoices = (
+        db.query(Invoice)
+        .filter(
+            and_(
+                Invoice.customer_id == customer_id,
+                Invoice.company_id == current_user.company_id,
+            )
+        )
+        .order_by(Invoice.created_at.desc())
+        .limit(100)
+        .all()
+    )
+
+    sign_requests = (
+        db.query(SignRequest)
+        .filter(
+            and_(
+                SignRequest.customer_id == customer_id,
+                SignRequest.company_id == current_user.company_id,
+            )
+        )
+        .order_by(SignRequest.created_at.desc())
+        .limit(100)
+        .all()
+    )
+
+    return {
+        "estimates": [
+            {
+                "id": str(e.id),
+                "estimate_number": e.estimate_number,
+                "status": e.status.value if e.status else None,
+                "customer_name": e.customer_name,
+                "total": float(e.total) if e.total is not None else 0.0,
+                "created_at": e.created_at,
+                "updated_at": e.updated_at,
+            }
+            for e in estimates
+        ],
+        "invoices": [
+            {
+                "id": str(i.id),
+                "invoice_number": i.invoice_number,
+                "status": i.status.value if i.status else None,
+                "customer_name": i.customer_name,
+                "total": float(i.total) if i.total is not None else 0.0,
+                "created_at": i.created_at,
+                "updated_at": i.updated_at,
+            }
+            for i in invoices
+        ],
+        "sign_requests": [
+            {
+                "id": str(sr.id),
+                "document_name": sr.document.name if sr.document else None,
+                "recipient_email": sr.recipient_email,
+                "recipient_name": sr.recipient_name,
+                "status": sr.status,
+                "created_at": sr.created_at,
+                "sent_at": sr.sent_at,
+                "signed_at": sr.signed_at,
+            }
+            for sr in sign_requests
+        ],
+    }

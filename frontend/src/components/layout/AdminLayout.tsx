@@ -15,30 +15,10 @@ import {
   CloseOutlined,
 } from '@ant-design/icons';
 import { useAuthStore } from '@/stores/authStore';
+import { useIsMobile, useIsNarrow } from '@/hooks/useIsMobile';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
-
-// Breakpoint for mobile/desktop
-const MOBILE_BREAKPOINT = 768;
-
-// Custom hook for responsive detection
-const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < MOBILE_BREAKPOINT : false
-  );
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  return isMobile;
-};
 
 const AdminLayout: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -46,6 +26,9 @@ const AdminLayout: React.FC = () => {
   const location = useLocation();
   const { user } = useAuthStore();
   const isMobile = useIsMobile();
+  // Tablet (768-1023px): use drawer nav, same as mobile
+  const isNarrow = useIsNarrow();
+  const useDrawer = isMobile || isNarrow;
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -76,12 +59,12 @@ const AdminLayout: React.FC = () => {
 
   const handleMenuClick = (key: string) => {
     navigate(key);
-    if (isMobile) {
+    if (useDrawer) {
       setMobileMenuOpen(false);
     }
   };
 
-  // Sidebar content (shared between desktop Sider and mobile Drawer)
+  // Sidebar content (shared between desktop Sider and mobile/tablet Drawer)
   const SidebarContent = () => (
     <>
       {/* Logo/Title */}
@@ -89,6 +72,7 @@ const AdminLayout: React.FC = () => {
         style={{
           padding: '16px 24px',
           borderBottom: '1px solid rgba(255,255,255,0.1)',
+          flexShrink: 0,
         }}
       >
         <Text
@@ -107,7 +91,7 @@ const AdminLayout: React.FC = () => {
         selectedKeys={[selectedKey]}
         items={menuItems}
         onClick={({ key }) => handleMenuClick(key)}
-        style={{ borderRight: 0, marginTop: 8, flex: 1 }}
+        style={{ borderRight: 0, marginTop: 8, flex: 1, overflowY: 'auto', overflowX: 'hidden' }}
       />
 
       {/* Back to App */}
@@ -115,6 +99,9 @@ const AdminLayout: React.FC = () => {
         style={{
           padding: 16,
           borderTop: '1px solid rgba(255,255,255,0.1)',
+          flexShrink: 0,
+          // Safe area for bottom notch
+          paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
         }}
       >
         <Button
@@ -137,8 +124,8 @@ const AdminLayout: React.FC = () => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      {/* Desktop Sidebar */}
-      {!isMobile && (
+      {/* Desktop Sidebar — only on screens >= 1024px */}
+      {!useDrawer && (
         <Sider
           width={220}
           style={{
@@ -149,18 +136,21 @@ const AdminLayout: React.FC = () => {
             bottom: 0,
             display: 'flex',
             flexDirection: 'column',
+            overflow: 'hidden',
+            zIndex: 100,
           }}
         >
           <SidebarContent />
         </Sider>
       )}
 
-      {/* Mobile Drawer */}
+      {/* Mobile + Tablet Drawer */}
       <Drawer
         placement="left"
         open={mobileMenuOpen}
         onClose={() => setMobileMenuOpen(false)}
-        width={280}
+        // Wider on tablet
+        width={isNarrow && !isMobile ? 300 : 280}
         styles={{
           body: {
             padding: 0,
@@ -182,6 +172,8 @@ const AdminLayout: React.FC = () => {
             flexDirection: 'column',
             height: '100%',
             background: '#001529',
+            // Account for notch on left side (landscape)
+            paddingLeft: 'env(safe-area-inset-left)',
           }}
         >
           {/* Close button row */}
@@ -191,6 +183,9 @@ const AdminLayout: React.FC = () => {
               justifyContent: 'flex-end',
               padding: '12px 16px',
               borderBottom: '1px solid rgba(255,255,255,0.1)',
+              // Account for top notch
+              paddingTop: 'calc(12px + env(safe-area-inset-top))',
+              flexShrink: 0,
             }}
           >
             <Button
@@ -208,25 +203,38 @@ const AdminLayout: React.FC = () => {
         </div>
       </Drawer>
 
-      <Layout style={{ marginLeft: isMobile ? 0 : 220, transition: 'margin-left 0.2s ease' }}>
+      <Layout
+        style={{
+          marginLeft: useDrawer ? 0 : 220,
+          transition: 'margin-left 0.2s ease',
+          minWidth: 0,
+          overflow: 'hidden',
+        }}
+      >
         {/* Header */}
         <Header
           style={{
             background: '#fff',
-            padding: `env(safe-area-inset-top) ${isMobile ? 16 : 24}px 0 ${isMobile ? 16 : 24}px`,
+            paddingLeft: useDrawer ? 16 : 24,
+            paddingRight: useDrawer ? 16 : 24,
+            paddingTop: 0,
+            paddingBottom: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             borderBottom: '1px solid #f0f0f0',
             position: 'sticky',
             top: 0,
-            zIndex: 10,
-            height: 64,
+            // Raised above drawer overlay backdrop but below the drawer itself
+            zIndex: 99,
+            height: 'auto',
+            minHeight: 64,
+            lineHeight: 'normal',
           }}
         >
           {/* Left side */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            {isMobile && (
+            {useDrawer && (
               <Button
                 type="text"
                 icon={<MenuOutlined />}
@@ -239,10 +247,12 @@ const AdminLayout: React.FC = () => {
                 aria-label="Open menu"
               />
             )}
-            <Text type="secondary" className="desktop-only">
-              Superuser Admin Console
-            </Text>
-            {isMobile && (
+            {!useDrawer && (
+              <Text type="secondary">
+                Superuser Admin Console
+              </Text>
+            )}
+            {useDrawer && (
               <Text strong style={{ fontSize: 16 }}>
                 Admin
               </Text>
@@ -251,7 +261,7 @@ const AdminLayout: React.FC = () => {
 
           {/* Right side */}
           <Space>
-            {!isMobile && <Text>{user?.fullName || user?.email}</Text>}
+            {!useDrawer && <Text>{user?.fullName || user?.email}</Text>}
             <Avatar
               icon={<UserOutlined />}
               src={user?.avatarUrl}
@@ -265,8 +275,16 @@ const AdminLayout: React.FC = () => {
           style={{
             background: '#f5f5f5',
             minHeight: 'calc(100vh - 64px)',
-            padding: isMobile ? 16 : 0,
-            paddingBottom: isMobile ? 'calc(16px + env(safe-area-inset-bottom))' : 0,
+            padding: useDrawer ? 16 : 0,
+            // Prevent horizontal overflow
+            overflowX: 'hidden',
+            // Safe area for bottom notch and right side (landscape)
+            paddingBottom: useDrawer
+              ? 'calc(16px + env(safe-area-inset-bottom))'
+              : 0,
+            paddingRight: useDrawer
+              ? 'calc(16px + env(safe-area-inset-right))'
+              : 0,
           }}
         >
           <Outlet />

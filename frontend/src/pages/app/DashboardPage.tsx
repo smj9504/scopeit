@@ -14,12 +14,15 @@ import {
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { colors, fonts } from '@/styles/theme';
+import { formatCurrency } from '@/utils/formatters';
 import { dashboardService, DashboardData } from '@/services/dashboardService';
 
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const isMobile = useIsMobile();
 
   // Fetch dashboard data
   const { data: dashboardData, isLoading, error } = useQuery<DashboardData>({
@@ -66,30 +69,34 @@ const DashboardPage: React.FC = () => {
           borderRadius: 12,
           cursor: onClick ? 'pointer' : 'default',
         }}
-        styles={{ body: { padding: 24 } }}
+        styles={{ body: { padding: isMobile ? 16 : 24 } }}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: isMobile ? 12 : 16 }}>
           <div
             style={{
-              width: 48,
-              height: 48,
+              width: isMobile ? 40 : 48,
+              height: isMobile ? 40 : 48,
               borderRadius: 10,
               background: colors.bgLight,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: 20,
+              fontSize: isMobile ? 17 : 20,
               color: colors.primary,
+              flexShrink: 0,
             }}
           >
             {icon}
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div
               style={{
-                fontSize: 13,
+                fontSize: 12,
                 color: colors.textSecondary,
                 marginBottom: 4,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
               }}
             >
               {title}
@@ -97,9 +104,10 @@ const DashboardPage: React.FC = () => {
             <div
               style={{
                 fontFamily: fonts.heading,
-                fontSize: 28,
+                fontSize: isMobile ? 22 : 28,
                 fontWeight: 700,
                 color: colors.textPrimary,
+                lineHeight: 1.2,
               }}
             >
               {value}
@@ -164,11 +172,11 @@ const DashboardPage: React.FC = () => {
       animate="visible"
     >
       {/* Header */}
-      <motion.div variants={itemVariants} style={{ marginBottom: 32 }}>
+      <motion.div variants={itemVariants} style={{ marginBottom: isMobile ? 20 : 32 }}>
         <h1
           style={{
             fontFamily: fonts.heading,
-            fontSize: 28,
+            fontSize: isMobile ? 22 : 28,
             fontWeight: 700,
             color: colors.textPrimary,
             margin: 0,
@@ -177,7 +185,7 @@ const DashboardPage: React.FC = () => {
         >
           Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {user?.fullName?.split(' ')[0] || 'there'}
         </h1>
-        <p style={{ color: colors.textSecondary, fontSize: 15, margin: 0 }}>
+        <p style={{ color: colors.textSecondary, fontSize: isMobile ? 13 : 15, margin: 0 }}>
           Here's what's happening with your business today.
         </p>
       </motion.div>
@@ -188,25 +196,23 @@ const DashboardPage: React.FC = () => {
           <Button
             type="primary"
             icon={<PlusOutlined />}
-            size="large"
             onClick={() => navigate('/app/estimates/new')}
             style={{
               background: colors.primary,
               fontWeight: 600,
-              height: 44,
               borderRadius: 8,
+              flex: isMobile ? '1 1 auto' : undefined,
             }}
           >
             New Estimate
           </Button>
           <Button
             icon={<PlusOutlined />}
-            size="large"
             onClick={() => navigate('/app/invoices/new')}
             style={{
               fontWeight: 600,
-              height: 44,
               borderRadius: 8,
+              flex: isMobile ? '1 1 auto' : undefined,
             }}
           >
             New Invoice
@@ -244,7 +250,7 @@ const DashboardPage: React.FC = () => {
           <StatCard
             icon={<DollarOutlined />}
             title="Pending payments"
-            value={`$${stats.pendingPayments.toLocaleString()}`}
+            value={formatCurrency(stats.pendingPayments)}
           />
         </Col>
       </Row>
@@ -281,10 +287,11 @@ const DashboardPage: React.FC = () => {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        padding: '16px 24px',
+                        padding: isMobile ? '12px 16px' : '16px 24px',
                         borderBottom: `1px solid ${colors.border}`,
                         cursor: 'pointer',
                         transition: 'background 0.2s ease',
+                        gap: 8,
                       }}
                       onClick={() => navigate(`/app/estimates/${est.id}`)}
                       onMouseEnter={(e) => {
@@ -294,21 +301,24 @@ const DashboardPage: React.FC = () => {
                         e.currentTarget.style.background = 'transparent';
                       }}
                     >
-                      <div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <div
                           style={{
                             fontWeight: 600,
                             color: colors.textPrimary,
                             marginBottom: 2,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
                           }}
                         >
                           {est.estimate_number}
                         </div>
-                        <div style={{ fontSize: 13, color: colors.textSecondary }}>
+                        <div style={{ fontSize: 13, color: colors.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {est.customer_name || 'No customer'}
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div
                           style={{
                             fontWeight: 600,
@@ -316,7 +326,7 @@ const DashboardPage: React.FC = () => {
                             marginBottom: 2,
                           }}
                         >
-                          ${est.total.toLocaleString()}
+                          {formatCurrency(est.total)}
                         </div>
                         <div
                           style={{
@@ -373,10 +383,11 @@ const DashboardPage: React.FC = () => {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        padding: '16px 24px',
+                        padding: isMobile ? '12px 16px' : '16px 24px',
                         borderBottom: `1px solid ${colors.border}`,
                         cursor: 'pointer',
                         transition: 'background 0.2s ease',
+                        gap: 8,
                       }}
                       onClick={() => navigate(`/app/invoices/${inv.id}`)}
                       onMouseEnter={(e) => {
@@ -386,21 +397,24 @@ const DashboardPage: React.FC = () => {
                         e.currentTarget.style.background = 'transparent';
                       }}
                     >
-                      <div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
                         <div
                           style={{
                             fontWeight: 600,
                             color: colors.textPrimary,
                             marginBottom: 2,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
                           }}
                         >
                           {inv.invoice_number}
                         </div>
-                        <div style={{ fontSize: 13, color: colors.textSecondary }}>
+                        <div style={{ fontSize: 13, color: colors.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {inv.customer_name || 'No customer'}
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div
                           style={{
                             fontWeight: 600,
@@ -408,7 +422,7 @@ const DashboardPage: React.FC = () => {
                             marginBottom: 2,
                           }}
                         >
-                          ${inv.total.toLocaleString()}
+                          {formatCurrency(inv.total)}
                         </div>
                         <div
                           style={{

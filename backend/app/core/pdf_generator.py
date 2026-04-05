@@ -1,6 +1,23 @@
 """
 PDF Generation Utility using WeasyPrint and Jinja2 Templates
 """
+import os
+import platform
+
+# Fix fontconfig/GTK on Windows BEFORE any GTK/WeasyPrint import
+if platform.system() == "Windows":
+    _gtk_root = r"C:\Program Files\GTK3-Runtime Win64"
+    if os.path.isdir(_gtk_root):
+        if not os.environ.get("FONTCONFIG_FILE"):
+            os.environ["FONTCONFIG_FILE"] = os.path.join(
+                _gtk_root, "etc", "fonts", "fonts.conf"
+            )
+        _gtk_bin = os.path.join(_gtk_root, "bin")
+        if _gtk_bin not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = (
+                _gtk_bin + os.pathsep + os.environ.get("PATH", "")
+            )
+
 from io import BytesIO
 from datetime import date
 from decimal import Decimal
@@ -14,7 +31,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates" / "pdf"
 
 # Available templates
-AVAILABLE_TEMPLATES = ["classic", "modern", "professional"]
+AVAILABLE_TEMPLATES = ["classic", "modern", "professional", "detailed"]
 DEFAULT_TEMPLATE = "classic"
 
 # Payment method display labels
@@ -311,20 +328,12 @@ def generate_estimate_html(
 
 def generate_pdf(html_content: str) -> BytesIO:
     """Generate PDF from HTML content"""
-    import os
-    import platform
+    import logging
 
-    # Fix fontconfig/GTK on Windows: ensure runtime paths are configured
-    if platform.system() == "Windows":
-        gtk_root = r"C:\Program Files\GTK3-Runtime Win64"
-        if os.path.isdir(gtk_root):
-            if not os.environ.get("FONTCONFIG_FILE"):
-                os.environ["FONTCONFIG_FILE"] = os.path.join(gtk_root, "etc", "fonts", "fonts.conf")
-            gtk_bin = os.path.join(gtk_root, "bin")
-            if gtk_bin not in os.environ.get("PATH", ""):
-                os.environ["PATH"] = gtk_bin + os.pathsep + os.environ.get("PATH", "")
+    # Suppress noisy GLib/Pango/fontconfig warnings on Windows
+    logging.getLogger("weasyprint").setLevel(logging.ERROR)
 
-    # Lazy import to avoid GTK initialization issues on Windows when only generating HTML
+    # Lazy import to avoid GTK initialization issues on Windows
     from weasyprint import HTML
 
     html = HTML(string=html_content)
@@ -388,6 +397,12 @@ def get_template_info() -> list:
             "id": "professional",
             "name": "Professional",
             "description": "Business-formal with refined typography",
+        },
+        {
+            "id": "detailed",
+            "name": "Detailed",
+            "description": "Section-based layout with prominent "
+            "headers, subtotals, and line-item detail rows",
         },
     ]
 

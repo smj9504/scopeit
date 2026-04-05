@@ -5,7 +5,7 @@ Registry, session management, and tool-to-estimate bridge endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from uuid import UUID
 from datetime import datetime
@@ -57,6 +57,11 @@ class ToolSessionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def coerce_uuid_to_str(cls, v):
+        return str(v) if v is not None else v
 
 
 class CreateEstimateFromToolRequest(BaseModel):

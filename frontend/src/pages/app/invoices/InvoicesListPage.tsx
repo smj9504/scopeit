@@ -3,7 +3,7 @@
  */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Button, Input, Select, Tag, Card, Dropdown, message } from 'antd';
+import { Table, Button, Input, Select, Tag, Card, Dropdown, App } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
@@ -15,6 +15,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { invoiceService } from '@/services/invoiceService';
 import { colors, fonts } from '@/styles/theme';
+import { formatCurrency } from '@/utils/formatters';
 import { useInvoiceStatuses, getStatusDisplay } from '@/hooks/useSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { ImportExcelModal } from '@/components/common/ImportExcelModal';
@@ -24,6 +25,7 @@ import type { ColumnsType } from 'antd/es/table';
 const InvoicesListPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { message } = App.useApp();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -75,7 +77,7 @@ const InvoicesListPage: React.FC = () => {
       title: 'Customer',
       dataIndex: 'customerName',
       key: 'customerName',
-      width: 120,
+      width: 140,
       ellipsis: true,
       render: (text) => text || <span style={{ color: colors.textMuted }}>-</span>,
     },
@@ -83,14 +85,15 @@ const InvoicesListPage: React.FC = () => {
       title: 'Date',
       dataIndex: 'invoiceDate',
       key: 'invoiceDate',
-      width: 100,
+      width: 110,
+      responsive: ['sm'] as const,
       render: (date) => dayjs(date).format('MMM D, YYYY'),
     },
     {
       title: 'Due Date',
       dataIndex: 'dueDate',
       key: 'dueDate',
-      width: 100,
+      width: 110,
       responsive: ['md'] as const,
       render: (date) => dayjs(date).format('MMM D, YYYY'),
     },
@@ -114,7 +117,7 @@ const InvoicesListPage: React.FC = () => {
       key: 'total',
       width: 100,
       align: 'right',
-      render: (total) => <span style={{ fontWeight: 600 }}>${(total || 0).toLocaleString()}</span>,
+      render: (total) => <span style={{ fontWeight: 600 }}>{formatCurrency(total || 0)}</span>,
     },
     {
       title: 'Balance',
@@ -125,55 +128,65 @@ const InvoicesListPage: React.FC = () => {
       responsive: ['lg'] as const,
       render: (balance) => (
         <span style={{ fontWeight: 600, color: (balance || 0) > 0 ? colors.error : colors.success }}>
-          ${(balance || 0).toLocaleString()}
+          {formatCurrency(balance || 0)}
         </span>
       ),
     },
   ];
 
+  const invoices = data?.items || [];
+
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
-        <h1 style={{ fontFamily: fonts.heading, fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0 }}>Invoices</h1>
-        <div style={{ flexShrink: 0 }}>
-          <Dropdown.Button
-            type="primary"
-            size="large"
-            onClick={() => navigate('/app/invoices/new')}
-            menu={{
-              items: [
-                {
-                  key: 'import-excel',
-                  label: 'Import from Excel',
-                  icon: <UploadOutlined />,
-                },
-              ],
-              onClick: ({ key }) => {
-                if (key === 'import-excel') setImportModalOpen(true);
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: isMobile ? 'stretch' : 'center',
+          flexDirection: isMobile ? 'column' : 'row',
+          marginBottom: 24,
+          gap: 12,
+        }}
+      >
+        <h1 style={{ fontFamily: fonts.heading, fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0 }}>
+          Invoices
+        </h1>
+        <Dropdown.Button
+          type="primary"
+          onClick={() => navigate('/app/invoices/new')}
+          menu={{
+            items: [
+              {
+                key: 'import-excel',
+                label: 'Import from Excel',
+                icon: <UploadOutlined />,
               },
-            }}
-            buttonsRender={([leftButton, rightButton]) => [
-              React.cloneElement(leftButton as React.ReactElement, {
-                style: {
-                  background: colors.primary,
-                  fontWeight: 600,
-                  height: 44,
-                  borderRadius: '8px 0 0 8px',
-                },
-              }),
-              React.cloneElement(rightButton as React.ReactElement, {
-                style: {
-                  background: colors.primary,
-                  height: 44,
-                  borderRadius: '0 8px 8px 0',
-                },
-              }),
-            ]}
-          >
-            <PlusOutlined /> New Invoice
-          </Dropdown.Button>
-        </div>
+            ],
+            onClick: ({ key }) => {
+              if (key === 'import-excel') setImportModalOpen(true);
+            },
+          }}
+          style={isMobile ? { width: '100%' } : { flexShrink: 0 }}
+          buttonsRender={([leftButton, rightButton]) => [
+            React.cloneElement(leftButton as React.ReactElement, {
+              style: {
+                background: colors.primary,
+                fontWeight: 600,
+                borderRadius: '8px 0 0 8px',
+                flex: isMobile ? 1 : undefined,
+              },
+            }),
+            React.cloneElement(rightButton as React.ReactElement, {
+              style: {
+                background: colors.primary,
+                borderRadius: '0 8px 8px 0',
+              },
+            }),
+          ]}
+        >
+          <PlusOutlined /> New Invoice
+        </Dropdown.Button>
       </div>
 
       {/* Filters */}
@@ -184,16 +197,14 @@ const InvoicesListPage: React.FC = () => {
             prefix={<SearchOutlined style={{ color: colors.textMuted }} />}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: isMobile ? '100%' : 250, minWidth: isMobile ? 'auto' : 200 }}
-            size="large"
+            style={{ flex: isMobile ? undefined : 1, maxWidth: isMobile ? '100%' : 300 }}
             allowClear
           />
           <Select
             placeholder="All statuses"
             value={statusFilter}
             onChange={setStatusFilter}
-            style={{ width: isMobile ? '100%' : 150, minWidth: isMobile ? 'auto' : 120 }}
-            size="large"
+            style={{ width: isMobile ? '100%' : 160 }}
             allowClear
             options={(statusConfigs || []).map((status) => ({
               value: status.name,
@@ -203,14 +214,92 @@ const InvoicesListPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* Table */}
-      <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+      {/* Mobile card view */}
+      <div className="mobile-card-view">
+        {isLoading ? (
+          <div style={{ padding: '32px 0', textAlign: 'center', color: colors.textMuted }}>
+            Loading...
+          </div>
+        ) : invoices.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center' }}>
+            <DollarOutlined style={{ fontSize: 40, color: colors.textMuted, marginBottom: 12 }} />
+            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>No invoices yet</div>
+            <div style={{ color: colors.textSecondary, marginBottom: 20, fontSize: 14 }}>
+              Create your first invoice or convert an approved estimate
+            </div>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate('/app/invoices/new')}
+              style={{ background: colors.primary, width: '100%' }}
+            >
+              Create Invoice
+            </Button>
+          </div>
+        ) : (
+          invoices.map((record) => {
+            const config = getStatusDisplay(record.status || '', statusConfigs || []);
+            return (
+              <div
+                key={record.id}
+                className="mobile-card"
+                onClick={() => navigate(`/app/invoices/${record.id}`)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="mobile-card-header">
+                  <span className="mobile-card-title">{record.invoiceNumber}</span>
+                  <Tag style={{ color: config.color, background: config.bg, border: 'none', fontWeight: 500 }}>
+                    {config.label}
+                  </Tag>
+                </div>
+                {record.customerName && (
+                  <div className="mobile-card-row">
+                    <span className="mobile-card-label">Customer</span>
+                    <span className="mobile-card-value">{record.customerName}</span>
+                  </div>
+                )}
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Date</span>
+                  <span className="mobile-card-value">{dayjs(record.invoiceDate).format('MMM D, YYYY')}</span>
+                </div>
+                {record.dueDate && (
+                  <div className="mobile-card-row">
+                    <span className="mobile-card-label">Due</span>
+                    <span className="mobile-card-value">{dayjs(record.dueDate).format('MMM D, YYYY')}</span>
+                  </div>
+                )}
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Total</span>
+                  <span className="mobile-card-value" style={{ fontWeight: 700 }}>{formatCurrency(record.total || 0)}</span>
+                </div>
+                <div className="mobile-card-row" style={{ borderBottom: 'none' }}>
+                  <span className="mobile-card-label">Balance</span>
+                  <span
+                    className="mobile-card-value"
+                    style={{ fontWeight: 600, color: (record.balanceDue || 0) > 0 ? colors.error : colors.success }}
+                  >
+                    {formatCurrency(record.balanceDue || 0)}
+                  </span>
+                </div>
+              </div>
+            );
+          })
+        )}
+        {invoices.length > 0 && (
+          <div style={{ textAlign: 'center', color: colors.textMuted, fontSize: 13, padding: '8px 0 4px' }}>
+            {invoices.length} invoice{invoices.length !== 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <Card className="desktop-table" style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
         <Table
           columns={columns}
-          dataSource={data?.items || []}
+          dataSource={invoices}
           rowKey="id"
           loading={isLoading}
-          scroll={isMobile ? { x: 560 } : undefined}
+          scroll={{ x: 560 }}
           pagination={{
             total: data?.total || 0,
             pageSize: 20,

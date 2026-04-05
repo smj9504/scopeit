@@ -1,10 +1,11 @@
 /**
  * Mobile Line Item Drawer
- * A slide-up drawer for editing line items on mobile devices
+ * A slide-up bottom drawer on mobile, side drawer on iPad for editing line items.
+ * Full-screen on mobile (< 768px), 420px side drawer on tablet (768-1023px).
  */
 import React, { useEffect } from 'react';
 import {
-  Modal,
+  Drawer,
   Form,
   Input,
   InputNumber,
@@ -14,6 +15,7 @@ import {
 } from 'antd';
 import { DeleteOutlined, FileTextOutlined, CameraOutlined } from '@ant-design/icons';
 import { colors, fonts } from '@/styles/theme';
+import { formatCurrency } from '@/utils/formatters';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface LineItemData {
@@ -89,127 +91,133 @@ export const MobileLineItemDrawer: React.FC<MobileLineItemDrawerProps> = ({
       onSave(values);
       onClose();
     }).catch(() => {
-      // Validation failed
+      // Validation failed — stay open
     });
+  };
+
+  const handleDelete = () => {
+    onDelete?.();
+    onClose();
   };
 
   const hasNotes = item?.notes && item.notes.length > 0;
 
+  // Placement: bottom drawer on mobile, right drawer on tablet+
+  const placement = isMobile ? 'bottom' : 'right';
+
+  // Height: nearly full screen on mobile (leaves a small gap at top)
+  // Width: 420px on tablet, full-width handled by placement=bottom
+  const drawerHeight = isMobile ? 'calc(100dvh - 48px)' : undefined;
+  const drawerWidth = !isMobile ? 420 : undefined;
+
   return (
-    <Modal
+    <Drawer
       title={isNew ? 'Add Line Item' : 'Edit Line Item'}
+      placement={placement}
       open={open}
-      onCancel={onClose}
-      onOk={handleSave}
-      okText={isNew ? 'Add Item' : 'Save Changes'}
-      cancelText="Cancel"
-      okButtonProps={{
-        style: { background: colors.primary },
-      }}
-      width={isMobile ? '100%' : 600}
-      centered
-      style={isMobile ? {
-        maxWidth: 'calc(100vw - 32px)',
-        margin: '16px',
-        top: 0,
-      } : undefined}
-      styles={isMobile ? {
+      onClose={onClose}
+      height={drawerHeight}
+      width={drawerWidth}
+      styles={{
+        header: {
+          paddingTop: isMobile ? 16 : 20,
+          paddingBottom: isMobile ? 12 : 16,
+          borderBottom: `1px solid ${colors.border}`,
+        },
         body: {
           padding: '16px',
-          maxHeight: 'calc(100vh - 200px)',
           overflowY: 'auto',
+          // Leave room for the fixed footer buttons
+          paddingBottom: 88,
         },
-      } : undefined}
+        footer: {
+          padding: '12px 16px',
+          borderTop: `1px solid ${colors.border}`,
+        },
+      }}
+      footer={
+        <div style={{ display: 'flex', gap: 8 }}>
+          {!isNew && onDelete && (
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              onClick={handleDelete}
+              style={{ flexShrink: 0 }}
+            />
+          )}
+          <Button onClick={onClose} style={{ flex: 1 }}>
+            Cancel
+          </Button>
+          <Button
+            type="primary"
+            onClick={handleSave}
+            style={{ background: colors.primary, flex: 1, fontWeight: 600 }}
+          >
+            {isNew ? 'Add Item' : 'Save Changes'}
+          </Button>
+        </div>
+      }
     >
-      <Form form={form} layout="vertical" style={{ marginTop: 24 }} onValuesChange={() => form.validateFields()}>
+      <Form
+        form={form}
+        layout="vertical"
+        onValuesChange={() => form.validateFields(['name'])}
+      >
         {/* Item Name */}
         <Form.Item
           name="name"
           label="Item Name"
           rules={[{ required: true, message: 'Please enter item name' }]}
+          style={{ marginBottom: 16 }}
         >
-          <Input
-            placeholder="Enter item name"
-          />
+          <Input placeholder="Enter item name" />
         </Form.Item>
 
         {/* Description */}
-        <Form.Item name="description" label="Description">
+        <Form.Item name="description" label="Description" style={{ marginBottom: 16 }}>
           <Input.TextArea
             placeholder="Optional description"
             rows={2}
+            autoSize={{ minRows: 2, maxRows: 4 }}
           />
         </Form.Item>
 
-        {/* Quantity, Unit & Unit Price - Responsive layout */}
-        {isMobile ? (
-          <>
-            {/* Mobile: Stack vertically with 2-column grid for Qty/Unit */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 0 }}>
-              <Form.Item name="quantity" label="Quantity" style={{ marginBottom: 16 }}>
-                <InputNumber
-                  min={0}
-                  precision={2}
-                  style={{ width: '100%' }}
-                  placeholder="1"
-                />
-              </Form.Item>
-              <Form.Item name="unit" label="Unit" style={{ marginBottom: 16 }}>
-                <AutoComplete
-                  options={unitOptions}
-                  style={{ width: '100%' }}
-                  filterOption={(input, option) =>
-                    option?.label?.toString().toLowerCase().includes(input.toLowerCase()) ?? false
-                  }
-                  placeholder="EA"
-                />
-              </Form.Item>
-            </div>
-            <Form.Item name="unitPrice" label="Unit Price">
-              <InputNumber
-                min={0}
-                precision={2}
-                prefix="$"
-                style={{ width: '100%' }}
-                placeholder="0.00"
-              />
-            </Form.Item>
-          </>
-        ) : (
-          /* Desktop: Side by side */
-          <div style={{ display: 'flex', gap: 16 }}>
-            <Form.Item name="quantity" label="Quantity" style={{ width: 120 }}>
-              <InputNumber
-                min={0}
-                precision={2}
-                style={{ width: '100%' }}
-                placeholder="1"
-              />
-            </Form.Item>
-            <Form.Item name="unit" label="Unit" style={{ width: 120 }}>
-              <AutoComplete
-                options={unitOptions}
-                style={{ width: '100%' }}
-                filterOption={(input, option) =>
-                  option?.label?.toString().toLowerCase().includes(input.toLowerCase()) ?? false
-                }
-                placeholder="EA"
-              />
-            </Form.Item>
-            <Form.Item name="unitPrice" label="Unit Price" style={{ flex: 1 }}>
-              <InputNumber
-                min={0}
-                precision={2}
-                prefix="$"
-                style={{ width: '100%' }}
-                placeholder="0.00"
-              />
-            </Form.Item>
-          </div>
-        )}
+        {/* Quantity & Unit on same row, Unit Price below */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 0 }}>
+          <Form.Item name="quantity" label="Quantity" style={{ marginBottom: 16 }}>
+            <InputNumber
+              min={0}
+              precision={2}
+              style={{ width: '100%' }}
+              placeholder="1"
+              inputMode="decimal"
+            />
+          </Form.Item>
+          <Form.Item name="unit" label="Unit" style={{ marginBottom: 16 }}>
+            <AutoComplete
+              options={unitOptions}
+              style={{ width: '100%' }}
+              filterOption={(input, option) =>
+                option?.label?.toString().toLowerCase().includes(input.toLowerCase()) ?? false
+              }
+              placeholder="EA"
+            />
+          </Form.Item>
+        </div>
 
-        {/* Total (readonly) */}
-        <Form.Item label="Total" shouldUpdate>
+        <Form.Item name="unitPrice" label="Unit Price" style={{ marginBottom: 16 }}>
+          <InputNumber
+            min={0}
+            precision={2}
+            prefix="$"
+            style={{ width: '100%' }}
+            placeholder="0.00"
+            inputMode="decimal"
+          />
+        </Form.Item>
+
+        {/* Total (readonly calculated) */}
+        <Form.Item label="Total" shouldUpdate style={{ marginBottom: 16 }}>
           {() => {
             const qty = form.getFieldValue('quantity') || 0;
             const price = form.getFieldValue('unitPrice') || 0;
@@ -225,48 +233,59 @@ export const MobileLineItemDrawer: React.FC<MobileLineItemDrawerProps> = ({
                   fontFamily: fonts.heading,
                 }}
               >
-                ${calculatedTotal.toFixed(2)}
+                {formatCurrency(calculatedTotal)}
               </div>
             );
           }}
         </Form.Item>
 
         {/* Taxable Toggle */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Form.Item name="isTaxable" label="Taxable" valuePropName="checked" style={{ marginBottom: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '12px 16px',
+            background: colors.bgLight,
+            borderRadius: 8,
+            marginBottom: 16,
+          }}
+        >
+          <span style={{ fontWeight: 500 }}>Taxable</span>
+          <Form.Item name="isTaxable" valuePropName="checked" style={{ marginBottom: 0 }}>
             <Switch />
           </Form.Item>
         </div>
 
-        {/* Notes Button */}
-        {onManageNotes && !isNew && (
-          <Form.Item style={{ marginBottom: 8 }}>
-            <Button
-              block
-              icon={<FileTextOutlined />}
-              onClick={onManageNotes}
-            >
-              {hasNotes ? `Manage Notes (${item?.notes?.length})` : 'Add Notes'}
-            </Button>
-          </Form.Item>
-        )}
-
-        {/* Photos Button */}
-        {onManagePhotos && !isNew && (
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Button
-              block
-              icon={<CameraOutlined />}
-              onClick={onManagePhotos}
-            >
-              {item?.images && item.images.length > 0
-                ? `Manage Photos (${item.images.length})`
-                : 'Add Photos'}
-            </Button>
-          </Form.Item>
+        {/* Notes & Photos Buttons — only for existing items */}
+        {!isNew && (onManageNotes || onManagePhotos) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {onManageNotes && (
+              <Button
+                block
+                icon={<FileTextOutlined />}
+                onClick={() => { onManageNotes(); }}
+                style={{ height: 44 }}
+              >
+                {hasNotes ? `Manage Notes (${item?.notes?.length})` : 'Add Notes'}
+              </Button>
+            )}
+            {onManagePhotos && (
+              <Button
+                block
+                icon={<CameraOutlined />}
+                onClick={() => { onManagePhotos(); }}
+                style={{ height: 44 }}
+              >
+                {item?.images && item.images.length > 0
+                  ? `Manage Photos (${item.images.length})`
+                  : 'Add Photos'}
+              </Button>
+            )}
+          </div>
         )}
       </Form>
-    </Modal>
+    </Drawer>
   );
 };
 
@@ -296,16 +315,20 @@ export const MobileLineItemCard: React.FC<MobileLineItemCardProps> = ({
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        padding: '10px 12px',
-        background: isSelected ? '#eff6ff' : colors.bgWhite,
+        padding: '12px 12px',
+        background: isSelected ? '#f0f4ff' : colors.bgWhite,
         borderBottom: `1px solid ${colors.border}`,
         cursor: 'pointer',
         transition: 'background 0.15s ease',
+        minHeight: 56,
       }}
       onClick={onTap}
     >
-      {/* Checkbox - stop propagation to prevent card tap */}
-      <div onClick={(e) => e.stopPropagation()}>
+      {/* Checkbox — stop propagation to prevent card tap */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ flexShrink: 0 }}
+      >
         <input
           type="checkbox"
           checked={isSelected}
@@ -314,6 +337,7 @@ export const MobileLineItemCard: React.FC<MobileLineItemCardProps> = ({
             width: 20,
             height: 20,
             cursor: 'pointer',
+            accentColor: colors.primary,
           }}
         />
       </div>
@@ -325,22 +349,23 @@ export const MobileLineItemCard: React.FC<MobileLineItemCardProps> = ({
             <div
               style={{
                 fontWeight: 500,
-                fontSize: 15,
+                fontSize: 14,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
+                lineHeight: '1.4',
               }}
             >
               {item.name || 'Untitled Item'}
             </div>
-            <div style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
-              {item.quantity} {item.unit} × ${item.unitPrice.toFixed(2)}
+            <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2, lineHeight: '1.3' }}>
+              {item.quantity} {item.unit} × {formatCurrency(item.unitPrice)}
               {!item.isTaxable && (
-                <span style={{ marginLeft: 8, fontSize: 11, color: colors.textMuted }}>(Non-tax)</span>
+                <span style={{ marginLeft: 6, fontSize: 11, color: colors.textMuted }}>(Non-tax)</span>
               )}
               {hasNotes && (
-                <span style={{ marginLeft: 8 }}>
-                  <FileTextOutlined style={{ fontSize: 12, color: colors.primary }} /> {item.notes?.length}
+                <span style={{ marginLeft: 6 }}>
+                  <FileTextOutlined style={{ fontSize: 11 }} /> {item.notes?.length}
                 </span>
               )}
             </div>
@@ -348,12 +373,13 @@ export const MobileLineItemCard: React.FC<MobileLineItemCardProps> = ({
           <div
             style={{
               fontWeight: 600,
-              fontSize: 15,
+              fontSize: 14,
               fontFamily: fonts.heading,
               whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
-            ${total.toFixed(2)}
+            {formatCurrency(total)}
           </div>
         </div>
       </div>

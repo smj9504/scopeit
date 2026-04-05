@@ -23,29 +23,9 @@ import {
 import { useAuthStore } from '@/stores/authStore';
 import { colors, fonts } from '@/styles/theme';
 import { HeaderNavProvider, useHeaderNav } from '@/hooks/useHeaderNav';
+import { useIsMobile, useIsNarrow } from '@/hooks/useIsMobile';
 
 const { Sider, Content, Header } = Layout;
-
-// Breakpoint for mobile/desktop
-const MOBILE_BREAKPOINT = 768;
-
-// Custom hook for responsive detection
-const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < MOBILE_BREAKPOINT : false
-  );
-
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  return isMobile;
-};
 
 // Back navigation button rendered in the header
 const HeaderBackNav: React.FC = () => {
@@ -80,6 +60,9 @@ const AppLayout: React.FC = () => {
   const location = useLocation();
   const { user, logout } = useAuthStore();
   const isMobile = useIsMobile();
+  // Tablet: 768-1023px — treat like mobile (drawer nav) but wider drawer
+  const isNarrow = useIsNarrow();
+  const useDrawer = isMobile || isNarrow;
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -153,12 +136,12 @@ const AppLayout: React.FC = () => {
 
   const handleMenuClick = (key: string) => {
     navigate(key);
-    if (isMobile) {
+    if (useDrawer) {
       setMobileMenuOpen(false);
     }
   };
 
-  // Sidebar content (shared between desktop Sider and mobile Drawer)
+  // Sidebar content (shared between desktop Sider and mobile/tablet Drawer)
   const SidebarContent = () => (
     <>
       {/* Logo */}
@@ -167,21 +150,22 @@ const AppLayout: React.FC = () => {
           height: 64,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
-          padding: collapsed && !isMobile ? 0 : '0 24px',
+          justifyContent: collapsed && !useDrawer ? 'center' : 'flex-start',
+          padding: collapsed && !useDrawer ? 0 : '0 24px',
           borderBottom: `1px solid ${colors.border}`,
+          flexShrink: 0,
         }}
       >
         <Link to="/app/dashboard" style={{ textDecoration: 'none' }}>
           <span
             style={{
               fontFamily: fonts.heading,
-              fontSize: collapsed && !isMobile ? 18 : 20,
+              fontSize: collapsed && !useDrawer ? 18 : 20,
               fontWeight: 700,
               color: colors.primary,
             }}
           >
-            {collapsed && !isMobile ? 'S' : 'ScopeIt'}
+            {collapsed && !useDrawer ? 'S' : 'ScopeIt'}
           </span>
         </Link>
       </div>
@@ -196,14 +180,17 @@ const AppLayout: React.FC = () => {
           border: 'none',
           padding: '12px 8px',
           flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
         }}
       />
 
       {/* Beta Badge */}
-      {(!collapsed || isMobile) && (
+      {(!collapsed || useDrawer) && (
         <div
           style={{
             padding: '8px 24px 24px',
+            flexShrink: 0,
           }}
         >
           <Badge.Ribbon text="Beta" color={colors.primary}>
@@ -226,8 +213,8 @@ const AppLayout: React.FC = () => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      {/* Desktop Sidebar */}
-      {!isMobile && (
+      {/* Desktop Sidebar — only on screens >= 1024px */}
+      {!useDrawer && (
         <div style={{ position: 'relative' }}>
           <Sider
             trigger={null}
@@ -245,23 +232,24 @@ const AppLayout: React.FC = () => {
               zIndex: 100,
               display: 'flex',
               flexDirection: 'column',
+              overflow: 'hidden',
             }}
           >
             <SidebarContent />
           </Sider>
 
-          {/* Edge toggle button */}
+          {/* Edge toggle button — large enough touch target on all devices */}
           <button
             onClick={() => setCollapsed(!collapsed)}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             style={{
               position: 'fixed',
-              left: collapsed ? 80 - 12 : 240 - 12,
+              left: collapsed ? 80 - 16 : 240 - 16,
               top: '50%',
               transform: 'translateY(-50%)',
               zIndex: 101,
-              width: 24,
-              height: 24,
+              width: 32,
+              height: 32,
               borderRadius: '50%',
               border: `1px solid ${colors.border}`,
               background: colors.bgWhite,
@@ -274,6 +262,8 @@ const AppLayout: React.FC = () => {
               transition: 'left 0.2s ease, background 0.15s ease',
               color: colors.textSecondary,
               fontSize: 10,
+              // Expand the invisible click area to 44px for touch
+              touchAction: 'manipulation',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = colors.bgLight;
@@ -287,12 +277,13 @@ const AppLayout: React.FC = () => {
         </div>
       )}
 
-      {/* Mobile Drawer */}
+      {/* Mobile + Tablet Drawer */}
       <Drawer
         placement="left"
         open={mobileMenuOpen}
         onClose={() => setMobileMenuOpen(false)}
-        width={280}
+        // Wider on tablet for better readability
+        width={isNarrow && !isMobile ? 300 : 280}
         styles={{
           body: {
             padding: 0,
@@ -313,6 +304,8 @@ const AppLayout: React.FC = () => {
             flexDirection: 'column',
             height: '100%',
             background: colors.bgWhite,
+            // Account for notch on left side (landscape)
+            paddingLeft: 'env(safe-area-inset-left)',
           }}
         >
           {/* Close button row */}
@@ -322,6 +315,9 @@ const AppLayout: React.FC = () => {
               justifyContent: 'flex-end',
               padding: '12px 16px',
               borderBottom: `1px solid ${colors.border}`,
+              // Account for top notch
+              paddingTop: 'calc(12px + env(safe-area-inset-top))',
+              flexShrink: 0,
             }}
           >
             <Button
@@ -342,8 +338,11 @@ const AppLayout: React.FC = () => {
       <HeaderNavProvider>
         <Layout
           style={{
-            marginLeft: isMobile ? 0 : collapsed ? 80 : 240,
+            marginLeft: useDrawer ? 0 : collapsed ? 80 : 240,
             transition: 'margin-left 0.2s ease',
+            // Prevent content from overflowing horizontally on mobile
+            minWidth: 0,
+            overflow: 'hidden',
           }}
         >
           {/* Header */}
@@ -351,19 +350,26 @@ const AppLayout: React.FC = () => {
             style={{
               background: colors.bgWhite,
               borderBottom: `1px solid ${colors.border}`,
-              padding: `env(safe-area-inset-top) ${isMobile ? 16 : 24}px 0 ${isMobile ? 16 : 24}px`,
+              // Left/right padding only; top safe area is handled via paddingTop below
+              paddingLeft: useDrawer ? 16 : 24,
+              paddingRight: useDrawer ? 16 : 24,
+              paddingTop: 0,
+              paddingBottom: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               position: 'sticky',
               top: 0,
               zIndex: 99,
-              height: 64,
+              // Grow the header to accommodate the safe-area-inset-top on notched devices
+              height: 'auto',
+              minHeight: 64,
+              lineHeight: 'normal',
             }}
           >
-            {/* Left side - Mobile menu toggle + Back navigation */}
+            {/* Left side - Drawer toggle (mobile + tablet) + Back navigation */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              {isMobile && (
+              {useDrawer && (
                 <Button
                   type="text"
                   icon={<MenuOutlined />}
@@ -406,11 +412,12 @@ const AppLayout: React.FC = () => {
                     width: isMobile ? 32 : 36,
                     height: isMobile ? 32 : 36,
                     lineHeight: isMobile ? '32px' : '36px',
+                    flexShrink: 0,
                   }}
                 >
                   {user?.fullName?.charAt(0).toUpperCase() || 'U'}
                 </Avatar>
-                {!isMobile && (
+                {!useDrawer && (
                   <span
                     style={{
                       fontWeight: 500,
@@ -430,8 +437,15 @@ const AppLayout: React.FC = () => {
               padding: isMobile ? 16 : 24,
               minHeight: 'calc(100vh - 64px)',
               background: colors.bgLight,
-              // Safe area for bottom notch
-              paddingBottom: isMobile ? 'calc(16px + env(safe-area-inset-bottom))' : 24,
+              // Prevent horizontal overflow on mobile/tablet
+              overflowX: 'hidden',
+              // Safe area for bottom notch and right side (landscape)
+              paddingBottom: useDrawer
+                ? 'calc(16px + env(safe-area-inset-bottom))'
+                : 24,
+              paddingRight: useDrawer
+                ? 'calc(16px + env(safe-area-inset-right))'
+                : 24,
             }}
           >
             <Outlet />

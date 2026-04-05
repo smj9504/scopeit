@@ -71,7 +71,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
         {tool.description}
       </p>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {tool.tags.slice(0, 2).map(tag => (
             <Tag key={tag} style={{ fontSize: 11, margin: 0 }}>{tag}</Tag>
@@ -80,14 +80,14 @@ export const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
         {tool.hasAccess ? (
           <Button
             type="primary"
-            size="small"
             icon={<ArrowRightOutlined />}
             onClick={(e) => { e.stopPropagation(); handleLaunch(); }}
+            style={{ minHeight: 36, minWidth: 80 }}
           >
             Launch
           </Button>
         ) : (
-          <Button size="small" disabled>
+          <Button disabled style={{ minHeight: 36 }}>
             Upgrade
           </Button>
         )}

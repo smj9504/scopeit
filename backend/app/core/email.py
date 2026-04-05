@@ -5,6 +5,8 @@ import smtplib
 import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from typing import Optional
 import logging
 
@@ -38,6 +40,9 @@ class EmailService:
         subject: str,
         html_content: str,
         text_content: Optional[str] = None,
+        reply_to: Optional[str] = None,
+        from_display_name: Optional[str] = None,
+        attachments: Optional[list[dict]] = None,
     ) -> bool:
         """
         Send an email
@@ -47,6 +52,8 @@ class EmailService:
             subject: Email subject
             html_content: HTML body content
             text_content: Plain text body (optional, fallback)
+            reply_to: Reply-To address (e.g. the user who triggered the email)
+            from_display_name: Override display name (e.g. "Minjee Song via ScopeIt")
 
         Returns:
             True if email was sent successfully, False otherwise
@@ -57,23 +64,45 @@ class EmailService:
             if settings.DEBUG:
                 logger.info(f"[DEBUG EMAIL] To: {to_email}")
                 logger.info(f"[DEBUG EMAIL] Subject: {subject}")
+                logger.info(f"[DEBUG EMAIL] Reply-To: {reply_to}")
                 logger.info(f"[DEBUG EMAIL] Content: {html_content[:500]}...")
             return True  # Return True in dev to not block registration
 
         try:
-            # Create message
-            message = MIMEMultipart("alternative")
+            # Create message — use "mixed" when attachments are present
+            if attachments:
+                message = MIMEMultipart("mixed")
+                body_part = MIMEMultipart("alternative")
+                if text_content:
+                    body_part.attach(MIMEText(text_content, "plain"))
+                body_part.attach(MIMEText(html_content, "html"))
+                message.attach(body_part)
+
+                for att in attachments:
+                    part = MIMEBase(
+                        att.get("mime_type", "application").split("/")[0],
+                        att.get("mime_type", "application/octet-stream").split("/")[-1],
+                    )
+                    part.set_payload(att["data"])
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        "Content-Disposition",
+                        "attachment",
+                        filename=att.get("filename", "attachment"),
+                    )
+                    message.attach(part)
+            else:
+                message = MIMEMultipart("alternative")
+                if text_content:
+                    message.attach(MIMEText(text_content, "plain"))
+                message.attach(MIMEText(html_content, "html"))
+
             message["Subject"] = subject
-            message["From"] = f"{self.from_name} <{self.from_email}>"
+            display_name = from_display_name or self.from_name
+            message["From"] = f"{display_name} <{self.from_email}>"
             message["To"] = to_email
-
-            # Add plain text and HTML parts
-            if text_content:
-                part1 = MIMEText(text_content, "plain")
-                message.attach(part1)
-
-            part2 = MIMEText(html_content, "html")
-            message.attach(part2)
+            if reply_to:
+                message["Reply-To"] = reply_to
 
             # Send email
             context = ssl.create_default_context()

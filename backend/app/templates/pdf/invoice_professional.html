@@ -39,7 +39,7 @@
             }
 
             @bottom-right {
-                content: "Invoice #" string(doc-number);
+                content: "Invoice #{{ invoice_number }}";
                 font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
                 font-size: 8pt;
                 color: #666;
@@ -176,6 +176,19 @@
             font-size: 16pt;
             font-weight: 700;
             margin: 15px 0;
+        }
+
+        .amount-headline {
+            font-size: 14pt;
+            font-weight: 700;
+            color: #111827;
+            margin: 12px 0 2px;
+        }
+
+        .amount-subtitle {
+            font-size: 9pt;
+            color: #6b7280;
+            margin-bottom: 10px;
         }
 
         /* Section Header */
@@ -449,9 +462,14 @@
         </div>
     </div>
 
-    <!-- Paid Status -->
+    <!-- Amount Headline -->
     {% if balance_due <= 0.01 %}
     <div class="paid-status">PAID IN FULL</div>
+    {% elif amount_paid > 0 %}
+    <div class="amount-headline">{{ balance_due | format_currency }} due {{ due_date | format_date }}</div>
+    <div class="amount-subtitle">Original: {{ total | format_currency }} | Paid: {{ amount_paid | format_currency }}</div>
+    {% else %}
+    <div class="amount-headline">{{ total | format_currency }} due {{ due_date | format_date }}</div>
     {% endif %}
 
     <!-- Notes -->

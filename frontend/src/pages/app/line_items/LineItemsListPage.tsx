@@ -33,6 +33,7 @@ import {
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { colors, fonts } from '@/styles/theme';
+import { formatCurrency } from '@/utils/formatters';
 import { lineItemService, LineItemNoteCreate } from '@/services/lineItemService';
 import { settingsService } from '@/services/settingsService';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -61,27 +62,25 @@ const LineItemsListPage: React.FC = () => {
   const { data: categories = [], isLoading: categoriesLoading } = useQuery({
     queryKey: ['lineItemCategories'],
     queryFn: () => settingsService.categories.list(),
-    staleTime: 30000, // Cache for 30 seconds
+    staleTime: 30000,
   });
 
   // Fetch units from Settings
   const { data: units = [], isLoading: unitsLoading } = useQuery({
     queryKey: ['lineItemUnits'],
     queryFn: () => settingsService.units.list(),
-    staleTime: 30000, // Cache for 30 seconds
+    staleTime: 30000,
   });
 
-  // Create category mutation (for auto-creating new categories)
+  // Create category mutation
   const createCategoryMutation = useMutation({
     mutationFn: (name: string) => {
-      // Generate a random color from preset colors
       const colorPresets = [
         '#6b7280', '#ef4444', '#f59e0b', '#eab308', '#22c55e',
         '#10b981', '#14b8a6', '#06b6d4', '#3b82f6', '#6366f1',
         '#8b5cf6', '#a855f7', '#d946ef', '#ec4899',
       ];
       const randomColor = colorPresets[Math.floor(Math.random() * colorPresets.length)];
-      
       return settingsService.categories.create({
         name: name.trim(),
         color: randomColor,
@@ -92,19 +91,18 @@ const LineItemsListPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['lineItemCategories'] });
     },
     onError: (error: any) => {
-      // If category already exists, that's okay - just continue
       if (error?.response?.status !== 409) {
         console.error('Failed to create category:', error);
       }
     },
   });
 
-  // Create unit mutation (for auto-creating new units)
+  // Create unit mutation
   const createUnitMutation = useMutation({
     mutationFn: (name: string) => {
       return settingsService.units.create({
         name: name.trim(),
-        label: name.trim(), // Use name as label if not provided
+        label: name.trim(),
         is_default: false,
       });
     },
@@ -112,7 +110,6 @@ const LineItemsListPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['lineItemUnits'] });
     },
     onError: (error: any) => {
-      // If unit already exists, that's okay - just continue
       if (error?.response?.status !== 409) {
         console.error('Failed to create unit:', error);
       }
@@ -184,6 +181,21 @@ const LineItemsListPage: React.FC = () => {
     onError: () => message.error('Failed to delete note'),
   });
 
+  const openEditModal = (record: LineItem) => {
+    setEditingItem(record);
+    form.setFieldsValue({
+      code: record.code,
+      name: record.name,
+      includes: record.includes,
+      unit: record.unit,
+      unitPrice: record.unitPrice,
+      cat: record.cat,
+      isTaxable: record.isTaxable,
+      visibility: record.visibility,
+    });
+    setModalOpen(true);
+  };
+
   const columns: ColumnsType<LineItem> = [
     {
       title: 'Code',
@@ -200,12 +212,12 @@ const LineItemsListPage: React.FC = () => {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
-      width: 150,
+      width: 160,
       ellipsis: true,
       render: (text, record) => (
         <div>
           <div style={{ fontWeight: 600, color: colors.textPrimary }}>{text}</div>
-          {record.includes && !isMobile && (
+          {record.includes && (
             <div style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>{record.includes}</div>
           )}
         </div>
@@ -215,7 +227,7 @@ const LineItemsListPage: React.FC = () => {
       title: 'Category',
       dataIndex: 'cat',
       key: 'cat',
-      width: 100,
+      width: 110,
       ellipsis: true,
       responsive: ['lg'] as const,
       render: (cat) => cat && <Tag style={{ border: 'none', background: colors.bgLight }}>{cat}</Tag>,
@@ -225,15 +237,16 @@ const LineItemsListPage: React.FC = () => {
       dataIndex: 'unit',
       key: 'unit',
       width: 60,
+      responsive: ['sm'] as const,
       render: (unit) => <span style={{ color: colors.textSecondary }}>{unit || '-'}</span>,
     },
     {
       title: 'Price',
       dataIndex: 'unitPrice',
       key: 'unitPrice',
-      width: 80,
+      width: 90,
       align: 'right',
-      render: (price) => <span style={{ fontWeight: 600 }}>${(price || 0).toFixed(2)}</span>,
+      render: (price) => <span style={{ fontWeight: 600 }}>{formatCurrency(price || 0)}</span>,
     },
     {
       title: 'Notes',
@@ -246,7 +259,8 @@ const LineItemsListPage: React.FC = () => {
           type="text"
           size="small"
           icon={<FileTextOutlined />}
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             setSelectedItem(record);
             setNotesModalOpen(true);
           }}
@@ -298,20 +312,7 @@ const LineItemsListPage: React.FC = () => {
                 key: 'edit',
                 icon: <EditOutlined />,
                 label: 'Edit',
-                onClick: () => {
-                  setEditingItem(record);
-                  form.setFieldsValue({
-                    code: record.code,
-                    name: record.name,
-                    includes: record.includes,
-                    unit: record.unit,
-                    unitPrice: record.unitPrice,
-                    cat: record.cat,
-                    isTaxable: record.isTaxable,
-                    visibility: record.visibility,
-                  });
-                  setModalOpen(true);
-                },
+                onClick: () => openEditModal(record),
               },
               {
                 key: 'notes',
@@ -340,7 +341,11 @@ const LineItemsListPage: React.FC = () => {
           }}
           trigger={['click']}
         >
-          <Button type="text" icon={<MoreOutlined />} />
+          <Button
+            type="text"
+            icon={<MoreOutlined />}
+            onClick={(e) => e.stopPropagation()}
+          />
         </Dropdown>
       ),
     },
@@ -349,23 +354,20 @@ const LineItemsListPage: React.FC = () => {
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
-      
-      // Handle unit - ensure new units are created
+
       let unitValue: string | undefined = undefined;
       if (values.unit) {
         unitValue = values.unit;
-        // Create if it's a new unit
         if (unitValue && !availableUnits.some(u => u.value === unitValue)) {
           createUnitMutation.mutate(unitValue);
         }
       }
-      
-      // Handle category - single value only
+
       let catValue: string | undefined = undefined;
       if (values.cat) {
         catValue = values.cat;
       }
-      
+
       const payload: LineItemCreate = {
         code: values.code || undefined,
         name: values.name,
@@ -395,7 +397,6 @@ const LineItemsListPage: React.FC = () => {
 
   const handleAddNote = () => {
     if (!selectedItem || !newNoteContent.trim()) return;
-
     addNoteMutation.mutate({
       lineItemId: selectedItem.id,
       data: {
@@ -410,51 +411,49 @@ const LineItemsListPage: React.FC = () => {
     deleteNoteMutation.mutate({ lineItemId: selectedItem.id, noteId });
   };
 
-  // Refresh selected item when notes change
   const refreshedSelectedItem = selectedItem
     ? data?.items?.find((item) => item.id === selectedItem.id) || selectedItem
     : null;
 
-  // Get category names from Settings (only active categories)
   const availableCategories = useMemo(() => {
-    if (!categories || categories.length === 0) {
-      return [];
-    }
-    // Filter active categories and map to names
-    // Note: We show all categories (both active and inactive) to ensure users can see all options
-    const result = categories
+    if (!categories || categories.length === 0) return [];
+    return categories
       .map((cat) => cat.name)
-      .filter((name) => name && name.trim()) // Filter out empty names
+      .filter((name) => name && name.trim())
       .sort();
-    return result;
   }, [categories]);
 
-  // Get unit options from Settings
   const availableUnits = useMemo(() => {
-    if (!units || units.length === 0) {
-      return [];
-    }
-    const result = units
-      .map((unit) => ({
-        value: unit.name,
-        label: unit.label || unit.name,
-      }))
-      .filter((unit) => unit.value && unit.value.trim()) // Filter out empty names
+    if (!units || units.length === 0) return [];
+    return units
+      .map((unit) => ({ value: unit.name, label: unit.label || unit.name }))
+      .filter((unit) => unit.value && unit.value.trim())
       .sort((a, b) => a.label.localeCompare(b.label));
-    return result;
   }, [units]);
+
+  const lineItems = data?.items || [];
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontFamily: fonts.heading, fontSize: 24, fontWeight: 700, margin: 0 }}>Line Items</h1>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: isMobile ? 'stretch' : 'center',
+          flexDirection: isMobile ? 'column' : 'row',
+          marginBottom: 24,
+          gap: 12,
+        }}
+      >
+        <h1 style={{ fontFamily: fonts.heading, fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0 }}>
+          Line Items
+        </h1>
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          size="large"
           onClick={() => setModalOpen(true)}
-          style={{ background: colors.primary, fontWeight: 600, height: 44, borderRadius: 8 }}
+          style={{ background: colors.primary, fontWeight: 600, borderRadius: 8, width: isMobile ? '100%' : undefined }}
         >
           Add Line Item
         </Button>
@@ -468,8 +467,7 @@ const LineItemsListPage: React.FC = () => {
             prefix={<SearchOutlined style={{ color: colors.textMuted }} />}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: isMobile ? '100%' : 300 }}
-            size="large"
+            style={{ flex: isMobile ? undefined : 1, maxWidth: isMobile ? '100%' : 300 }}
             allowClear
           />
           <Select
@@ -477,7 +475,6 @@ const LineItemsListPage: React.FC = () => {
             value={categoryFilter}
             onChange={setCategoryFilter}
             style={{ width: isMobile ? '100%' : 180 }}
-            size="large"
             allowClear
             showSearch
             loading={categoriesLoading}
@@ -489,14 +486,128 @@ const LineItemsListPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* Table */}
-      <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+      {/* Mobile card view */}
+      <div className="mobile-card-view">
+        {isLoading ? (
+          <div style={{ padding: '32px 0', textAlign: 'center', color: colors.textMuted }}>
+            Loading...
+          </div>
+        ) : lineItems.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center' }}>
+            <UnorderedListOutlined style={{ fontSize: 40, color: colors.textMuted, marginBottom: 12 }} />
+            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>No line items yet</div>
+            <div style={{ color: colors.textSecondary, marginBottom: 20, fontSize: 14 }}>
+              Build your library of reusable line items
+            </div>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setModalOpen(true)}
+              style={{ background: colors.primary, width: '100%' }}
+            >
+              Add Line Item
+            </Button>
+          </div>
+        ) : (
+          lineItems.map((record) => (
+            <div key={record.id} className="mobile-card">
+              <div className="mobile-card-header">
+                <div style={{ minWidth: 0 }}>
+                  <div className="mobile-card-title">{record.name}</div>
+                  {record.code && (
+                    <div style={{ fontSize: 12, color: colors.textMuted, fontFamily: 'monospace', marginTop: 2 }}>
+                      {record.code}
+                    </div>
+                  )}
+                </div>
+                <Dropdown
+                  menu={{
+                    items: [
+                      {
+                        key: 'edit',
+                        icon: <EditOutlined />,
+                        label: 'Edit',
+                        onClick: () => openEditModal(record),
+                      },
+                      {
+                        key: 'notes',
+                        icon: <FileTextOutlined />,
+                        label: 'Manage Notes',
+                        onClick: () => {
+                          setSelectedItem(record);
+                          setNotesModalOpen(true);
+                        },
+                      },
+                      {
+                        key: 'duplicate',
+                        icon: <CopyOutlined />,
+                        label: 'Duplicate',
+                        onClick: () => duplicateMutation.mutate(record.id),
+                      },
+                      { type: 'divider' },
+                      {
+                        key: 'delete',
+                        icon: <DeleteOutlined />,
+                        label: 'Delete',
+                        danger: true,
+                        onClick: () => deleteMutation.mutate(record.id),
+                      },
+                    ],
+                  }}
+                  trigger={['click']}
+                >
+                  <Button type="text" icon={<MoreOutlined />} size="small" style={{ flexShrink: 0 }} />
+                </Dropdown>
+              </div>
+              {record.includes && (
+                <div style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 8 }}>
+                  {record.includes}
+                </div>
+              )}
+              <div className="mobile-card-row">
+                <span className="mobile-card-label">Price</span>
+                <span className="mobile-card-value" style={{ fontWeight: 700 }}>
+                  {formatCurrency(record.unitPrice || 0)}
+                  {record.unit && <span style={{ fontWeight: 400, color: colors.textMuted }}> / {record.unit}</span>}
+                </span>
+              </div>
+              {record.cat && (
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Category</span>
+                  <Tag style={{ border: 'none', background: colors.bgLight, margin: 0 }}>{record.cat}</Tag>
+                </div>
+              )}
+              <div className="mobile-card-row" style={{ borderBottom: 'none' }}>
+                <span className="mobile-card-label">Visibility</span>
+                <Tag
+                  style={{
+                    border: 'none',
+                    background: record.visibility === 'company' ? '#dbeafe' : '#f3f4f6',
+                    color: record.visibility === 'company' ? '#1d4ed8' : '#6b7280',
+                    margin: 0,
+                  }}
+                >
+                  {record.visibility === 'company' ? 'Shared' : 'Private'}
+                </Tag>
+              </div>
+            </div>
+          ))
+        )}
+        {lineItems.length > 0 && (
+          <div style={{ textAlign: 'center', color: colors.textMuted, fontSize: 13, padding: '8px 0 4px' }}>
+            {lineItems.length} item{lineItems.length !== 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <Card className="desktop-table" style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
         <Spin spinning={isLoading}>
           <Table
             columns={columns}
-            dataSource={data?.items || []}
+            dataSource={lineItems}
             rowKey="id"
-            scroll={isMobile ? { x: 360 } : undefined}
+            scroll={{ x: 480 }}
             pagination={{
               pageSize: 20,
               total: data?.total || 0,
@@ -536,12 +647,8 @@ const LineItemsListPage: React.FC = () => {
         styles={isMobile ? { body: { padding: '16px', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' } } : undefined}
       >
         <Form form={form} layout="vertical" style={{ marginTop: isMobile ? 16 : 24 }}>
-          {/* Code + Name: Stack on mobile */}
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            gap: isMobile ? 0 : 16
-          }}>
+          {/* Code + Name */}
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 0 : 16 }}>
             <Form.Item
               name="code"
               label="Code"
@@ -563,17 +670,13 @@ const LineItemsListPage: React.FC = () => {
             <Input.TextArea rows={2} placeholder="Includes setup, extraction, and cleanup" />
           </Form.Item>
 
-          {/* Unit / Unit Price / Category: 2-col grid on mobile */}
+          {/* Unit / Unit Price / Category */}
           <div style={{
             display: 'grid',
             gridTemplateColumns: isMobile ? '1fr 1fr' : '120px 150px 1fr',
             gap: isMobile ? 12 : 16,
           }}>
-            <Form.Item
-              name="unit"
-              label="Unit"
-              style={{ marginBottom: isMobile ? 12 : undefined }}
-            >
+            <Form.Item name="unit" label="Unit" style={{ marginBottom: isMobile ? 12 : undefined }}>
               <AutoComplete
                 placeholder={isMobile ? 'Select' : 'Select or type'}
                 allowClear
@@ -601,10 +704,7 @@ const LineItemsListPage: React.FC = () => {
             <Form.Item
               name="cat"
               label="Category"
-              style={{
-                gridColumn: isMobile ? '1 / -1' : undefined,
-                marginBottom: isMobile ? 12 : undefined
-              }}
+              style={{ gridColumn: isMobile ? '1 / -1' : undefined, marginBottom: isMobile ? 12 : undefined }}
             >
               <Select
                 placeholder="Select category"
@@ -621,12 +721,8 @@ const LineItemsListPage: React.FC = () => {
             </Form.Item>
           </div>
 
-          {/* Taxable + Visibility: Row on mobile with proper spacing */}
-          <div style={{
-            display: 'flex',
-            flexDirection: isMobile ? 'column' : 'row',
-            gap: isMobile ? 12 : 24
-          }}>
+          {/* Taxable + Visibility */}
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : 24 }}>
             <Form.Item
               name="isTaxable"
               label="Taxable"
@@ -659,11 +755,7 @@ const LineItemsListPage: React.FC = () => {
         title={
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <FileTextOutlined style={{ flexShrink: 0 }} />
-            <span style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               Notes: {refreshedSelectedItem?.name}
             </span>
           </div>
@@ -711,7 +803,7 @@ const LineItemsListPage: React.FC = () => {
             flexDirection: isMobile ? 'column' : 'row',
             justifyContent: 'space-between',
             alignItems: isMobile ? 'stretch' : 'center',
-            gap: isMobile ? 12 : 8
+            gap: isMobile ? 12 : 8,
           }}>
             <span style={{ fontSize: 12, color: colors.textSecondary, order: isMobile ? 2 : 1 }}>
               Notes will appear when using this item.

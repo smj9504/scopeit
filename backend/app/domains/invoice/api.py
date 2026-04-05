@@ -125,7 +125,7 @@ class PaymentResponse(BaseModel):
     id: str
     amount: Decimal
     paymentMethod: str
-    paymentDate: date
+    paymentDate: Optional[date] = None
     referenceNumber: Optional[str] = None
     notes: Optional[str] = None
     createdAt: datetime
@@ -437,6 +437,14 @@ def recalculate_invoice(invoice: Invoice, db: Session):
         partial_status = get_invoice_status_by_name(db, invoice.company_id, "partial")
         if partial_status:
             invoice.status_id = partial_status.id
+        invoice.paid_at = None
+    elif invoice.status in (InvoiceStatus.PAID, InvoiceStatus.PARTIAL):
+        # Reset to draft if all payments removed or total changed
+        default_status = get_default_invoice_status(db, invoice.company_id)
+        if default_status:
+            invoice.status = InvoiceStatus.DRAFT
+            invoice.status_id = default_status.id
+        invoice.paid_at = None
 
     db.commit()
 
@@ -670,18 +678,16 @@ async def update_invoice(
             customer_email = customer.email
             customer_address = customer.full_address
 
-    # Update invoice fields
-    for field, value in data.model_dump(exclude_unset=True, exclude={'sections'}).items():
+    # Update invoice fields (exclude customer snapshot fields - handled separately below)
+    customer_fields = {'sections', 'customer_name', 'customer_email', 'customer_address'}
+    for field, value in data.model_dump(exclude_unset=True, exclude=customer_fields).items():
         if hasattr(invoice, field):
             setattr(invoice, field, value)
 
-    # Override customer fields with looked-up values
-    if customer_name:
-        invoice.customer_name = customer_name
-    if customer_email:
-        invoice.customer_email = customer_email
-    if customer_address:
-        invoice.customer_address = customer_address
+    # Set customer snapshot fields explicitly
+    invoice.customer_name = customer_name
+    invoice.customer_email = customer_email
+    invoice.customer_address = customer_address
 
     # Delete existing sections and items
     db.query(InvoiceSection).filter(InvoiceSection.invoice_id == invoice_id).delete()
@@ -821,7 +827,7 @@ async def record_payment(
         invoice_id=invoice.id,
         amount=data.amount,
         payment_method=data.payment_method,
-        payment_date=data.payment_date or date.today(),
+        payment_date=data.payment_date,
         reference_number=data.reference_number,
         notes=data.notes,
         recorded_by=current_user.id,
@@ -835,6 +841,51 @@ async def record_payment(
     db.refresh(invoice)
 
     # Recalculate (this will update status based on payment)
+    recalculate_invoice(invoice, db)
+
+    return InvoiceResponse(**serialize_invoice(invoice))
+
+
+@router.patch("/{invoice_id}/payments/{payment_id}", response_model=InvoiceResponse)
+async def update_payment(
+    invoice_id: str,
+    payment_id: str,
+    data: RecordPaymentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update an existing payment"""
+    invoice = db.query(Invoice).filter(
+        and_(
+            Invoice.id == invoice_id,
+            Invoice.company_id == current_user.company_id,
+        )
+    ).first()
+
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    payment = db.query(Payment).filter(
+        and_(
+            Payment.id == payment_id,
+            Payment.invoice_id == invoice_id,
+        )
+    ).first()
+
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    # Update payment fields
+    payment.amount = data.amount
+    payment.payment_method = data.payment_method
+    payment.payment_date = data.payment_date
+    payment.reference_number = data.reference_number
+    payment.notes = data.notes
+
+    db.commit()
+    db.refresh(invoice)
+
+    # Recalculate (this will update amount_paid and status)
     recalculate_invoice(invoice, db)
 
     return InvoiceResponse(**serialize_invoice(invoice))
@@ -1092,7 +1143,7 @@ async def delete_adjustment(
 
 def _prepare_invoice_pdf_data(invoice: Invoice, company: Company, db: Session) -> dict:
     """Prepare invoice data for PDF generation"""
-    # Get customer info
+    # Get customer info - prefer relationship, fall back to snapshot fields
     customer = invoice.customer
 
     # Build company info dict
@@ -1109,16 +1160,16 @@ def _prepare_invoice_pdf_data(invoice: Invoice, company: Company, db: Session) -
         "logo_url": company.logo_url or "",
     }
 
-    # Build customer info dict
+    # Build customer info dict - use snapshot fields as fallback when customer relationship is None
     customer_info = {
-        "name": customer.name if customer else "",
-        "address": customer.address_line1 if customer else "",
+        "name": customer.name if customer else (invoice.customer_name or ""),
+        "address": customer.address_line1 if customer else (invoice.customer_address or ""),
         "address_line2": customer.address_line2 if customer else "",
         "city": customer.city if customer else "",
         "state": customer.state if customer else "",
         "zipcode": customer.zipcode if customer else "",
         "phone": customer.phone if customer else "",
-        "email": customer.email if customer else "",
+        "email": customer.email if customer else (invoice.customer_email or ""),
     }
 
     # Build sections with items
@@ -1260,7 +1311,7 @@ async def get_invoice_pdf(
     pdf_bytes = generate_invoice_pdf(pdf_data, template_name)
 
     # Build filename
-    customer_name = invoice.customer.name if invoice.customer else "Customer"
+    customer_name = invoice.customer.name if invoice.customer else (invoice.customer_name or "Customer")
     filename = f"{customer_name} - Invoice {invoice.invoice_number}"
     if invoice.balance_due and float(invoice.balance_due) <= 0.01:
         filename += " PAID"

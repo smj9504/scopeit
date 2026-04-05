@@ -4,7 +4,7 @@
  * and session-based history for uploaded files.
  */
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { Card, Button, Upload, Typography, Tabs, Empty, Modal, Input, Dropdown, Tooltip, Spin, message } from 'antd';
+import { Card, Button, Upload, Typography, Tabs, Empty, Modal, Input, Dropdown, Tooltip, Spin, App } from 'antd';
 import {
   UploadOutlined,
   HistoryOutlined,
@@ -18,6 +18,7 @@ import {
 } from '@ant-design/icons';
 import type { ToolComponentProps } from '../registry';
 import { colors, fonts, borderRadius } from '@/styles/theme';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import {
   useToolSessions,
   useCreateToolSession,
@@ -58,6 +59,8 @@ type SelectionMode = 'face' | 'line' | 'area';
 type PanelTab = 'summary' | 'faces' | 'accessories' | 'lines' | 'area';
 
 const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
+  const { message } = App.useApp();
+  const isMobile = useIsMobile();
   // Data state
   const [data, setData] = useState<RoofData | null>(null);
   const [filename, setFilename] = useState('');
@@ -459,7 +462,7 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
         background: colors.bgLight,
         cursor: isPanning.current ? 'grabbing' : mode === 'area' ? 'crosshair' : 'default',
         borderRadius: data ? 0 : borderRadius.lg,
-        minHeight: data ? 500 : 300,
+        minHeight: data ? (isMobile ? 300 : 500) : 240,
       }}
       onWheel={onWheel}
       onMouseDown={onMouseDown}
@@ -468,7 +471,7 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
       onMouseLeave={onMouseUp}
     >
       {!data ? (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16, padding: 48 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16, padding: isMobile ? 24 : 48 }}>
           <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
               <polygon points="12,3 21,19 3,19" stroke={colors.textMuted} strokeWidth="1.2" fill="rgba(203,213,225,0.2)" />
@@ -488,7 +491,7 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
             showUploadList={false}
             beforeUpload={handleFileUpload}
           >
-            <Button type="primary" icon={<UploadOutlined />} size="large">
+            <Button type="primary" icon={<UploadOutlined />} size="large" style={{ minHeight: 44, minWidth: 180 }}>
               Upload JSON File
             </Button>
           </Upload>
@@ -611,9 +614,9 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
             borderTop: `1px solid ${colors.border}`, display: 'flex', fontSize: 11,
             color: colors.textSecondary, alignItems: 'center',
           }}>
-            {mode === 'face' && <span>Drag: select | Click: toggle | Ctrl+Click: deselect | Alt+Drag: pan | Scroll: zoom</span>}
-            {mode === 'line' && <span>Drag: select | Click: toggle | Ctrl+Click: deselect | Alt+Drag: pan</span>}
-            {mode === 'area' && <span style={{ color: '#d97706' }}>Click: add point | Double click: finish | Esc: reset{areaPoly.length > 0 ? ` | ${areaPoly.length} pts` : ''}</span>}
+            {mode === 'face' && <span>{isMobile ? 'Tap to select' : 'Drag: select | Click: toggle | Ctrl+Click: deselect | Alt+Drag: pan | Scroll: zoom'}</span>}
+            {mode === 'line' && <span>{isMobile ? 'Tap to select' : 'Drag: select | Click: toggle | Ctrl+Click: deselect | Alt+Drag: pan'}</span>}
+            {mode === 'area' && <span style={{ color: '#d97706' }}>{isMobile ? `Tap to add${areaPoly.length > 0 ? ` | ${areaPoly.length} pts` : ''}` : `Click: add point | Double click: finish | Esc: reset${areaPoly.length > 0 ? ` | ${areaPoly.length} pts` : ''}`}</span>}
             <span style={{ marginLeft: 'auto', color: colors.textMuted }}>
               {data.faces.filter(f => !f.isAccessory).length}F | {Object.keys(data.lines).length}L | {(zoom * 100).toFixed(0)}%
             </span>
@@ -626,7 +629,10 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
   // ── Right Panel ──
   const rightPanel = data ? (
     <div style={{
-      width: 300, background: colors.bgWhite, borderLeft: `1px solid ${colors.border}`,
+      width: isMobile ? '100%' : 300,
+      background: colors.bgWhite,
+      borderLeft: isMobile ? 'none' : `1px solid ${colors.border}`,
+      borderTop: isMobile ? `1px solid ${colors.border}` : 'none',
       display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0,
     }}>
       {/* Stats row */}
@@ -670,7 +676,7 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
       </div>
 
       {/* Tab content */}
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '14px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '14px', maxHeight: isMobile ? 320 : undefined }}>
 
         {/* SUMMARY */}
         {panelTab === 'summary' && (
@@ -967,12 +973,12 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
         <Card
           size="small"
           style={{ borderRadius: borderRadius.lg, marginBottom: 16, padding: 0 }}
-          bodyStyle={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+          bodyStyle={{ padding: isMobile ? '8px 12px' : '8px 16px', display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8, overflowX: 'auto', flexWrap: isMobile ? 'nowrap' : 'wrap' }}
         >
           {/* File info */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 8 }}>
             <FolderOpenOutlined style={{ color: colors.textMuted }} />
-            <Text style={{ color: colors.textSecondary, fontSize: 13, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, maxWidth: isMobile ? 100 : 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {filename}
             </Text>
           </div>
@@ -1017,15 +1023,17 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
             History
           </Button>
 
-          {/* Legend */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexWrap: 'wrap' }}>
-            {Object.entries(LINE_COLORS).filter(([k]) => k !== 'HIDDEN' && k !== 'OTHER').map(([k, v]) => (
-              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                <div style={{ width: 16, height: 2, background: v.color, borderRadius: 1 }} />
-                <span style={{ fontSize: 11, color: colors.textMuted }}>{v.label}</span>
-              </div>
-            ))}
-          </div>
+          {/* Legend - hidden on mobile */}
+          {!isMobile && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto', flexWrap: 'wrap' }}>
+              {Object.entries(LINE_COLORS).filter(([k]) => k !== 'HIDDEN' && k !== 'OTHER').map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                  <div style={{ width: 16, height: 2, background: v.color, borderRadius: 1 }} />
+                  <span style={{ fontSize: 11, color: colors.textMuted }}>{v.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       )}
 
@@ -1038,7 +1046,13 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, borderRadius: 0,
           } : {}),
         }}
-        bodyStyle={{ padding: 0, display: 'flex', height: data ? 600 : 'auto', minHeight: data ? 600 : 300 }}
+        bodyStyle={{
+          padding: 0,
+          display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
+          height: data ? (isMobile ? 'auto' : 600) : 'auto',
+          minHeight: data ? (isMobile ? 0 : 600) : (isMobile ? 240 : 300),
+        }}
       >
         {canvasContent}
         {rightPanel}
@@ -1050,7 +1064,9 @@ const RoofAnalyzerTool: React.FC<ToolComponentProps> = () => {
         open={historyOpen}
         onCancel={() => setHistoryOpen(false)}
         footer={null}
-        width={520}
+        width={isMobile ? '100%' : 520}
+        style={isMobile ? { top: 0, margin: 0, maxWidth: '100vw', paddingBottom: 0 } : undefined}
+        centered={!isMobile}
       >
         {sessionsLoading ? (
           <div style={{ textAlign: 'center', padding: 32 }}><Spin /></div>

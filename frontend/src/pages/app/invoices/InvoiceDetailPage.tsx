@@ -4,7 +4,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, Button, Tag, Descriptions, Table, Dropdown, Space, Divider, message, Modal, Form, InputNumber, DatePicker, Select, Input, Tooltip } from 'antd';
+import { Card, Button, Tag, Descriptions, Table, Dropdown, Space, Divider, App, Modal, Form, InputNumber, DatePicker, Select, Input, Tooltip } from 'antd';
 import {
   EditOutlined,
   SendOutlined,
@@ -20,13 +20,15 @@ import {
   DownOutlined,
   FileTextOutlined,
   EyeOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
 import { colors, fonts } from '@/styles/theme';
+import { formatCurrency } from '@/utils/formatters';
 import { invoiceService } from '@/services/invoiceService';
 import { useInvoiceStatuses, getStatusDisplay } from '@/hooks/useSettings';
-import { useIsMobile } from '@/hooks/useIsMobile';
+import { useIsMobile, useIsNarrow } from '@/hooks/useIsMobile';
 import { useBackNav } from '@/hooks/useHeaderNav';
 import type { InvoiceStatus, PaymentMethod, Adjustment, Payment, PdfTemplateInfo } from '@/types/entities';
 import { ReceiptPreviewModal } from '@/components/features/ReceiptPreviewModal';
@@ -44,12 +46,16 @@ const InvoiceDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const isNarrow = useIsNarrow();
+  const { message, modal } = App.useApp();
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [adjustmentModalOpen, setAdjustmentModalOpen] = useState(false);
 
   useBackNav('Back to Invoices', '/app/invoices');
   const [receiptPreviewPayment, setReceiptPreviewPayment] = useState<Payment | null>(null);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [paymentListVisible, setPaymentListVisible] = useState(false);
   const [paymentForm] = Form.useForm();
   const [adjustmentForm] = Form.useForm();
 
@@ -117,10 +123,13 @@ const InvoiceDetailPage: React.FC = () => {
       const link = document.createElement('a');
       link.href = url;
       link.download = `${invoice?.invoiceNumber || 'invoice'}.pdf`;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       message.success('PDF downloaded successfully');
-    } catch (error) {
+    } catch (error: any) {
+      console.error('PDF download error:', error);
       message.error('Failed to download PDF');
     }
   };
@@ -132,24 +141,43 @@ const InvoiceDetailPage: React.FC = () => {
 
   const handleRecordPayment = async (values: any) => {
     try {
-      await invoiceService.payments.record(id!, {
+      const paymentData = {
         amount: values.amount,
         paymentMethod: values.paymentMethod,
-        paymentDate: values.paymentDate.format('YYYY-MM-DD'),
+        paymentDate: values.paymentDate ? values.paymentDate.format('YYYY-MM-DD') : undefined,
         referenceNumber: values.referenceNumber,
         notes: values.notes,
-      });
-      message.success('Payment recorded successfully');
+      };
+      if (editingPayment) {
+        await invoiceService.payments.update(id!, editingPayment.id, paymentData);
+        message.success('Payment updated successfully');
+      } else {
+        await invoiceService.payments.record(id!, paymentData);
+        message.success('Payment recorded successfully');
+      }
       setPaymentModalVisible(false);
+      setEditingPayment(null);
       paymentForm.resetFields();
       refetch();
     } catch (error) {
-      message.error('Failed to record payment');
+      message.error(editingPayment ? 'Failed to update payment' : 'Failed to record payment');
     }
   };
 
+  const handleEditPayment = (payment: Payment) => {
+    setEditingPayment(payment);
+    paymentForm.setFieldsValue({
+      amount: Number(payment.amount),
+      paymentMethod: payment.paymentMethod,
+      paymentDate: payment.paymentDate ? dayjs(payment.paymentDate) : null,
+      referenceNumber: payment.referenceNumber,
+      notes: payment.notes,
+    });
+    setPaymentModalVisible(true);
+  };
+
   const handleDeletePayment = async (paymentId: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: 'Delete Payment',
       content: 'Are you sure you want to delete this payment?',
       okText: 'Delete',
@@ -169,6 +197,7 @@ const InvoiceDetailPage: React.FC = () => {
   const handleDelete = async () => {
     try {
       await invoiceService.delete(id!);
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
       message.success('Invoice deleted successfully');
       navigate('/app/invoices');
     } catch (error) {
@@ -177,7 +206,7 @@ const InvoiceDetailPage: React.FC = () => {
   };
 
   const handleCancel = async () => {
-    Modal.confirm({
+    modal.confirm({
       title: 'Cancel Invoice',
       content: 'Are you sure you want to cancel this invoice? This action cannot be undone.',
       okText: 'Cancel Invoice',
@@ -199,7 +228,7 @@ const InvoiceDetailPage: React.FC = () => {
   };
 
   const handleDeleteAdjustment = (adjustmentId: string) => {
-    Modal.confirm({
+    modal.confirm({
       title: 'Delete Adjustment',
       icon: <ExclamationCircleOutlined />,
       content: 'Are you sure you want to delete this adjustment?',
@@ -239,8 +268,8 @@ const InvoiceDetailPage: React.FC = () => {
   const taxLabel = invoice.taxLabel || 'Tax';
   const taxAmount = Number(invoice.taxAmount || 0);
   const total = Number(invoice.total || 0);
-  const amountPaid = Number(invoice.amountPaid || 0);
-  const balanceDue = Number(invoice.balanceDue || 0) || total - amountPaid;
+  const amountPaid = Number(invoice.amountPaid ?? 0);
+  const balanceDue = invoice.balanceDue != null ? Number(invoice.balanceDue) : Math.round((total - amountPaid) * 100) / 100;
   const sections = invoice.sections || [];
   const payments = invoice.payments || [];
   const adjustments = invoice.adjustments || [];
@@ -267,36 +296,62 @@ const InvoiceDetailPage: React.FC = () => {
       title: 'Description',
       dataIndex: 'name',
       key: 'name',
+      render: (name: string, record: any) => {
+        const desc = record.description;
+        const notes = record.notes;
+        const hasExtra = desc || (notes && notes.length > 0);
+        if (!hasExtra) return name;
+        const tooltipContent = (
+          <div style={{ maxWidth: 300 }}>
+            {desc && <div style={{ marginBottom: notes?.length ? 6 : 0 }}>{desc}</div>}
+            {notes?.map((n: string, i: number) => (
+              <div key={i} style={{ fontSize: 12, color: '#d1d5db', borderTop: i === 0 && desc ? '1px solid rgba(255,255,255,0.15)' : undefined, paddingTop: i === 0 && desc ? 4 : 0 }}>{n}</div>
+            ))}
+          </div>
+        );
+        return (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            {name}
+            <Tooltip title={tooltipContent} placement="topLeft">
+              <InfoCircleOutlined style={{ fontSize: 13, color: colors.textMuted, cursor: 'pointer' }} />
+            </Tooltip>
+          </span>
+        );
+      },
     },
-    {
-      title: 'Unit',
-      dataIndex: 'unit',
-      key: 'unit',
-      width: 80,
-    },
+    ...(!isMobile ? [
+      {
+        title: 'Unit',
+        dataIndex: 'unit',
+        key: 'unit',
+        width: 80,
+      },
+    ] : []),
     {
       title: 'Qty',
       dataIndex: 'quantity',
       key: 'quantity',
-      width: 80,
+      ...(isMobile ? {} : { width: 80 }),
       align: 'right' as const,
       render: (quantity: number) => Number(quantity || 0).toFixed(2),
     },
-    {
-      title: 'Price',
-      dataIndex: 'unitPrice',
-      key: 'unitPrice',
-      width: 100,
-      align: 'right' as const,
-      render: (price: number) => `$${Number(price || 0).toFixed(2)}`,
-    },
+    ...(!isMobile ? [
+      {
+        title: 'Price',
+        dataIndex: 'unitPrice',
+        key: 'unitPrice',
+        width: 100,
+        align: 'right' as const,
+        render: (price: number) => formatCurrency(Number(price || 0)),
+      },
+    ] : []),
     {
       title: 'Total',
       dataIndex: 'total',
       key: 'total',
-      width: 120,
+      ...(isMobile ? {} : { width: 120 }),
       align: 'right' as const,
-      render: (total: number) => <span style={{ fontWeight: 600 }}>${Number(total || 0).toFixed(2)}</span>,
+      render: (total: number) => <span style={{ fontWeight: 600 }}>{formatCurrency(Number(total || 0))}</span>,
     },
   ];
 
@@ -305,49 +360,50 @@ const InvoiceDetailPage: React.FC = () => {
       title: 'Date',
       dataIndex: 'paymentDate',
       key: 'paymentDate',
-      render: (date: string) => dayjs(date).format('MMM D, YYYY'),
+      render: (date: string) => date ? dayjs(date).format('MMM D, YYYY') : '—',
     },
-    {
-      title: 'Method',
-      dataIndex: 'paymentMethod',
-      key: 'paymentMethod',
-      render: (method: PaymentMethod) => paymentMethodLabels[method],
-    },
-    {
-      title: 'Reference',
-      dataIndex: 'referenceNumber',
-      key: 'referenceNumber',
-      render: (ref?: string) => ref || '—',
-    },
+    ...(!isMobile ? [
+      {
+        title: 'Method',
+        dataIndex: 'paymentMethod',
+        key: 'paymentMethod',
+        render: (method: PaymentMethod) => paymentMethodLabels[method],
+      },
+      {
+        title: 'Reference',
+        dataIndex: 'referenceNumber',
+        key: 'referenceNumber',
+        render: (ref?: string) => ref || '—',
+      },
+    ] : []),
     {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
       align: 'right' as const,
-      render: (amount: number) => <span style={{ fontWeight: 600 }}>${Number(amount || 0).toFixed(2)}</span>,
+      render: (amount: number) => <span style={{ fontWeight: 600 }}>{formatCurrency(Number(amount || 0))}</span>,
     },
     {
-      title: 'Actions',
+      title: '',
       key: 'actions',
-      width: 140,
+      width: 50,
       align: 'center' as const,
       render: (_: any, record: Payment) => (
-        <Space size="small">
-          <Tooltip title="View Receipt">
-            <Button
-              type="text"
-              size="small"
-              icon={<EyeOutlined />}
-              onClick={() => setReceiptPreviewPayment(record)}
-              style={{ color: '#16a34a' }}
-            />
-          </Tooltip>
-          <Tooltip title="Download Receipt">
-            <Button
-              type="text"
-              size="small"
-              icon={<DownloadOutlined />}
-              onClick={async () => {
+        <Dropdown
+          trigger={['click']}
+          menu={{
+            items: [
+              { key: 'view', icon: <EyeOutlined />, label: 'View Receipt' },
+              { key: 'download', icon: <DownloadOutlined />, label: 'Download Receipt' },
+              { key: 'edit', icon: <EditOutlined />, label: 'Edit Payment' },
+              { type: 'divider' as const },
+              { key: 'delete', icon: <DeleteOutlined />, label: 'Delete', danger: true },
+            ],
+            onClick: async ({ key, domEvent }) => {
+              domEvent.stopPropagation();
+              if (key === 'view') {
+                setReceiptPreviewPayment(record);
+              } else if (key === 'download') {
                 try {
                   const blob = await invoiceService.payments.getReceiptPdf(id!, record.id);
                   const url = window.URL.createObjectURL(blob);
@@ -362,22 +418,25 @@ const InvoiceDetailPage: React.FC = () => {
                   document.body.removeChild(a);
                   window.URL.revokeObjectURL(url);
                   message.success('Receipt downloaded');
-                } catch (error) {
+                } catch {
                   message.error('Failed to download receipt');
                 }
-              }}
-              style={{ color: colors.primary }}
-            />
-          </Tooltip>
+              } else if (key === 'edit') {
+                handleEditPayment(record);
+              } else if (key === 'delete') {
+                handleDeletePayment(record.id);
+              }
+            },
+          }}
+        >
           <Button
             type="text"
             size="small"
-            danger
-            onClick={() => handleDeletePayment(record.id)}
-          >
-            Delete
-          </Button>
-        </Space>
+            icon={<MoreOutlined />}
+            onClick={(e) => e.stopPropagation()}
+            style={{ color: colors.textMuted }}
+          />
+        </Dropdown>
       ),
     },
   ];
@@ -447,9 +506,9 @@ const InvoiceDetailPage: React.FC = () => {
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <h1 style={{ fontFamily: fonts.heading, fontSize: 24, fontWeight: 700, margin: 0 }}>
+          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
+              <h1 style={{ fontFamily: fonts.heading, fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0 }}>
                 {invoiceNumber}
               </h1>
               <Dropdown
@@ -490,24 +549,24 @@ const InvoiceDetailPage: React.FC = () => {
                 </Tag>
               </Dropdown>
             </div>
-            <div style={{ color: colors.textSecondary }}>{invoice.title || 'No title'}</div>
+            <div style={{ color: colors.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{invoice.title || 'No title'}</div>
           </div>
 
           {/* Mobile: Record Payment button + Actions dropdown */}
           {isMobile ? (
-            <Space>
+            <Space style={{ flexShrink: 0 }}>
               {canRecordPayment && (
                 <Button
                   icon={<DollarOutlined />}
                   type="primary"
-                  style={{ background: colors.primary }}
-                  onClick={() => setPaymentModalVisible(true)}
+                  style={{ background: colors.primary, minWidth: 44, height: 40 }}
+                  onClick={() => { setEditingPayment(null); paymentForm.setFieldsValue({ amount: balanceDue, paymentMethod: 'check', paymentDate: dayjs(), referenceNumber: undefined, notes: undefined }); setPaymentModalVisible(true); }}
                 >
-                  Record Payment
+                  Pay
                 </Button>
               )}
               <Dropdown menu={{ items: mobileActionMenuItems, onClick: handleMobileMenuClick }} trigger={['click']}>
-                <Button icon={<MoreOutlined />} />
+                <Button icon={<MoreOutlined />} style={{ minWidth: 44, height: 40 }} />
               </Dropdown>
             </Space>
           ) : (
@@ -524,7 +583,7 @@ const InvoiceDetailPage: React.FC = () => {
                   icon={<DollarOutlined />}
                   type="primary"
                   style={{ background: colors.primary }}
-                  onClick={() => setPaymentModalVisible(true)}
+                  onClick={() => { setEditingPayment(null); paymentForm.setFieldsValue({ amount: balanceDue, paymentMethod: 'check', paymentDate: dayjs(), referenceNumber: undefined, notes: undefined }); setPaymentModalVisible(true); }}
                 >
                   Record Payment
                 </Button>
@@ -540,11 +599,11 @@ const InvoiceDetailPage: React.FC = () => {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', flexDirection: isMobile ? 'column' : 'row' }}>
+      <div style={{ display: 'flex', gap: isNarrow ? 16 : 24, flexWrap: 'wrap', flexDirection: isNarrow ? 'column' : 'row' }}>
         {/* Main Content */}
-        <div style={{ flex: 1, minWidth: isMobile ? 'auto' : 600 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           {/* Customer & Dates */}
-          <Card style={{ borderRadius: 12, marginBottom: 16 }}>
+          <Card style={{ borderRadius: 12, marginBottom: 16, overflow: 'hidden' }}>
             <Descriptions column={{ xs: 1, sm: 1, md: 1, lg: 2, xl: 3 }}>
               <Descriptions.Item label="Customer">
                 <div style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
@@ -641,19 +700,22 @@ const InvoiceDetailPage: React.FC = () => {
           {sections.length > 0 ? (
             sections.map((section) => (
               <Card key={section.id} style={{ borderRadius: 12, marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <h3 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, margin: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12 }}>
+                  <h3 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                     {section.name}
                   </h3>
-                  <span style={{ fontWeight: 600 }}>${Number(section.subtotal || 0).toFixed(2)}</span>
+                  <span style={{ fontWeight: 600, flexShrink: 0 }}>{formatCurrency(Number(section.subtotal || 0))}</span>
                 </div>
-                <Table
-                  columns={itemColumns}
-                  dataSource={section.items || []}
-                  rowKey="id"
-                  pagination={false}
-                  size="small"
-                />
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <Table
+                    columns={itemColumns}
+                    dataSource={section.items || []}
+                    rowKey="id"
+                    pagination={false}
+                    size="small"
+                    style={{ minWidth: isMobile ? 320 : undefined }}
+                  />
+                </div>
               </Card>
             ))
           ) : (
@@ -670,13 +732,20 @@ const InvoiceDetailPage: React.FC = () => {
               <h3 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
                 Payment History
               </h3>
-              <Table
-                columns={paymentColumns}
-                dataSource={payments}
-                rowKey="id"
-                pagination={false}
-                size="small"
-              />
+              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <Table
+                  columns={paymentColumns}
+                  dataSource={payments}
+                  rowKey="id"
+                  pagination={false}
+                  size="small"
+                  style={{ minWidth: isMobile ? 280 : undefined }}
+                  onRow={(record) => ({
+                    onClick: () => setReceiptPreviewPayment(record),
+                    style: { cursor: 'pointer' },
+                  })}
+                />
+              </div>
             </Card>
           )}
 
@@ -690,21 +759,21 @@ const InvoiceDetailPage: React.FC = () => {
         </div>
 
         {/* Summary Sidebar - Responsive */}
-        <Card style={{ borderRadius: 12, width: isMobile ? '100%' : 'auto', flex: isMobile ? 1 : '0 0 280px', flexShrink: 0, alignSelf: 'flex-start', minWidth: isMobile ? 'auto' : 280 }}>
+        <Card style={{ borderRadius: 12, width: isNarrow ? '100%' : 'auto', flex: isNarrow ? '1 1 auto' : '0 0 300px', flexShrink: 0, alignSelf: 'flex-start', minWidth: isNarrow ? 'auto' : 300 }}>
           <h3 style={{ fontFamily: fonts.heading, fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Summary</h3>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
             <span style={{ color: colors.textSecondary }}>Subtotal</span>
-            <span>${subtotal.toFixed(2)}</span>
+            <span>{formatCurrency(subtotal)}</span>
           </div>
 
           {/* Adjustments */}
           {adjustments.length > 0 && (
             <>
               {adjustments.map((adj: Adjustment) => (
-                <div key={adj.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ color: adj.type === 'premium' ? '#16a34a' : '#dc2626' }}>
+                <div key={adj.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                    <span style={{ color: colors.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {adj.name} ({adj.type === 'premium' ? '+' : '-'}{Number(adj.percentage).toFixed(1)}%)
                     </span>
                     <Button
@@ -717,7 +786,7 @@ const InvoiceDetailPage: React.FC = () => {
                     />
                   </div>
                   <span style={{ color: adj.type === 'premium' ? '#16a34a' : '#dc2626' }}>
-                    {adj.type === 'premium' ? '+' : '-'}${Number(adj.amount || 0).toFixed(2)}
+                    {adj.type === 'premium' ? '+' : '-'}{formatCurrency(Number(adj.amount || 0))}
                   </span>
                 </div>
               ))}
@@ -726,10 +795,9 @@ const InvoiceDetailPage: React.FC = () => {
 
           <Button
             type="dashed"
-            size="small"
             icon={<PlusOutlined />}
             onClick={() => setAdjustmentModalOpen(true)}
-            style={{ width: '100%', marginBottom: 8 }}
+            style={{ width: '100%', marginBottom: 8, height: 40 }}
           >
             Add Premium/Discount
           </Button>
@@ -738,7 +806,7 @@ const InvoiceDetailPage: React.FC = () => {
             <span style={{ color: colors.textSecondary }}>
               {taxLabel} ({taxRate}%)
             </span>
-            <span>${taxAmount.toFixed(2)}</span>
+            <span>{formatCurrency(taxAmount)}</span>
           </div>
 
           <Divider style={{ margin: '16px 0' }} />
@@ -746,14 +814,24 @@ const InvoiceDetailPage: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
             <span style={{ fontWeight: 600, fontSize: 16 }}>Total</span>
             <span style={{ fontWeight: 700, fontSize: 20, fontFamily: fonts.heading }}>
-              ${total.toFixed(2)}
+              {formatCurrency(total)}
             </span>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span style={{ color: colors.textSecondary }}>Amount Paid</span>
-            <span style={{ color: '#059669', fontWeight: 600 }}>
-              -${amountPaid.toFixed(2)}
+          <div
+            style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, cursor: payments.length > 0 ? 'pointer' : 'default', padding: '4px 0', borderRadius: 4 }}
+            onClick={() => { if (payments.length > 0) setPaymentListVisible(true); }}
+          >
+            <span style={{ color: colors.textSecondary }}>
+              Amount Paid
+              {payments.length > 0 && (
+                <span style={{ fontSize: 11, marginLeft: 4, color: '#9ca3af' }}>
+                  ({payments.length})
+                </span>
+              )}
+            </span>
+            <span style={{ color: '#059669', fontWeight: 600, textDecoration: payments.length > 0 ? 'underline' : 'none' }}>
+              -{formatCurrency(amountPaid)}
             </span>
           </div>
 
@@ -767,22 +845,72 @@ const InvoiceDetailPage: React.FC = () => {
               fontFamily: fonts.heading,
               color: balanceDue > 0 ? '#dc2626' : '#059669'
             }}>
-              ${balanceDue.toFixed(2)}
+              {formatCurrency(balanceDue)}
             </span>
           </div>
         </Card>
       </div>
 
-      {/* Record Payment Modal */}
+      {/* Payment List Modal (read-only) */}
       <Modal
-        title="Record Payment"
+        title="Payment History"
+        open={paymentListVisible}
+        onCancel={() => setPaymentListVisible(false)}
+        footer={<Button onClick={() => setPaymentListVisible(false)}>Close</Button>}
+        width={520}
+      >
+        {payments.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 24, color: colors.textSecondary }}>
+            No payments recorded
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {payments.map((payment) => (
+              <div
+                key={payment.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 16px',
+                  background: '#f9fafb',
+                  borderRadius: 8,
+                  border: '1px solid #e5e7eb',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>{formatCurrency(Number(payment.amount))}</div>
+                  <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                    {paymentMethodLabels[payment.paymentMethod] || payment.paymentMethod}
+                    {payment.paymentDate && ` · ${dayjs(payment.paymentDate).format('MMM D, YYYY')}`}
+                    {payment.referenceNumber && ` · ${payment.referenceNumber}`}
+                  </div>
+                  {payment.notes && (
+                    <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{payment.notes}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+            <Divider style={{ margin: '8px 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+              <span>Total Paid</span>
+              <span style={{ color: '#059669' }}>{formatCurrency(amountPaid)}</span>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Record/Edit Payment Modal */}
+      <Modal
+        title={editingPayment ? "Edit Payment" : "Record Payment"}
         open={paymentModalVisible}
         onCancel={() => {
           setPaymentModalVisible(false);
+          setEditingPayment(null);
           paymentForm.resetFields();
         }}
         onOk={() => paymentForm.submit()}
-        okText="Record Payment"
+        okText={editingPayment ? "Update Payment" : "Record Payment"}
       >
         <Form
           form={paymentForm}
@@ -800,7 +928,6 @@ const InvoiceDetailPage: React.FC = () => {
             rules={[
               { required: true, message: 'Please enter amount' },
               { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
-              { type: 'number', max: balanceDue, message: 'Amount cannot exceed balance due' },
             ]}
           >
             <InputNumber
@@ -808,7 +935,6 @@ const InvoiceDetailPage: React.FC = () => {
               prefix="$"
               precision={2}
               min={0}
-              max={balanceDue}
             />
           </Form.Item>
 
@@ -829,7 +955,6 @@ const InvoiceDetailPage: React.FC = () => {
           <Form.Item
             label="Payment Date"
             name="paymentDate"
-            rules={[{ required: true, message: 'Please select payment date' }]}
           >
             <DatePicker style={{ width: '100%' }} />
           </Form.Item>

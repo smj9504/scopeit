@@ -44,6 +44,26 @@ TOOL_REGISTRY: Dict[str, ToolDefinition] = {
         can_create_estimate=True,
         tags=["moving", "packing", "contents"],
     ),
+    "item_recommender": ToolDefinition(
+        id="item_recommender",
+        name="Item Recommender",
+        description="Search Xactimate line items by work type and get grouped recommendations (pre-work, main, materials, trim, post-work).",
+        icon="SearchOutlined",
+        category="Analysis",
+        required_plan="free",
+        can_create_estimate=False,
+        tags=["xactimate", "line-items", "search", "recommendations"],
+    ),
+    "pdf_editor": ToolDefinition(
+        id="pdf_editor",
+        name="PDF Editor & E-Sign",
+        description="Edit PDFs, add text and images, merge documents, and send for electronic signatures.",
+        icon="FileTextOutlined",
+        category="Documents",
+        required_plan="free",
+        can_create_estimate=False,
+        tags=["pdf", "editor", "e-sign", "documents", "signature"],
+    ),
 }
 
 

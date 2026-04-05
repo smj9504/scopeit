@@ -3,7 +3,7 @@
  * Displays a preview of Invoice/Estimate PDFs with template selection
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal, Select, Button, Spin, Space, Tooltip, message } from 'antd';
+import { Modal, Select, Button, Spin, Space, Tooltip, App } from 'antd';
 import {
   DownloadOutlined,
   PrinterOutlined,
@@ -11,6 +11,7 @@ import {
   CompressOutlined,
 } from '@ant-design/icons';
 import { colors, borderRadius } from '@/styles/theme';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import type { PdfTemplateId, PdfTemplateInfo } from '@/types/entities';
 
 export type DocumentType = 'invoice' | 'estimate';
@@ -44,6 +45,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   templates,
   templatesLoading = false,
 }) => {
+  const { message } = App.useApp();
+  const isMobile = useIsMobile();
+  const isTablet = !isMobile && typeof window !== 'undefined' && window.innerWidth < 1024;
   const [selectedTemplate, setSelectedTemplate] = useState<PdfTemplateId>(defaultTemplate);
   const [previewHtml, setPreviewHtml] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -122,7 +126,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   return (
     <Modal
       title={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 600 }}>
             Preview {documentLabel} #{documentNumber}
           </span>
@@ -144,25 +148,49 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
       }
       open={open}
       onCancel={onClose}
-      width={isFullscreen ? '100%' : 900}
-      style={isFullscreen ? { top: 0, maxWidth: '100%', paddingBottom: 0 } : undefined}
+      width={
+        isFullscreen
+          ? '100%'
+          : isMobile
+          ? '100%'
+          : isTablet
+          ? '92vw'
+          : 900
+      }
+      style={
+        isFullscreen
+          ? { top: 0, maxWidth: '100%', paddingBottom: 0 }
+          : isMobile
+          ? { top: 0, maxWidth: '100%', margin: 0, paddingBottom: 0 }
+          : undefined
+      }
       styles={{
+        header: {
+          paddingBottom: 16,
+          marginBottom: 0,
+        },
         body: {
           padding: 0,
-          height: isFullscreen ? 'calc(100vh - 110px)' : 600,
+          height: isFullscreen
+            ? 'calc(100vh - 110px)'
+            : isMobile
+            ? 'calc(100dvh - 110px)'
+            : 600,
           overflow: 'hidden',
         },
       }}
       footer={null}
-      centered={!isFullscreen}
+      centered={!isFullscreen && !isMobile}
     >
       {/* Toolbar */}
       <div
         style={{
           display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
           justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '12px 16px',
+          alignItems: isMobile ? 'stretch' : 'center',
+          gap: isMobile ? 8 : 0,
+          padding: isMobile ? '10px 12px' : '12px 16px',
           borderBottom: `1px solid ${colors.border}`,
           background: colors.bgLight,
         }}
@@ -173,7 +201,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
           <Select
             value={selectedTemplate}
             onChange={setSelectedTemplate}
-            style={{ width: 180 }}
+            style={{ width: isMobile ? 160 : 180 }}
             loading={templatesLoading}
             options={templates.map((t) => ({
               value: t.id,
@@ -183,18 +211,20 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
         </Space>
 
         {/* Actions */}
-        <Space>
+        <Space style={isMobile ? { display: 'flex', justifyContent: 'flex-end' } : undefined}>
           <Tooltip title="Print">
             <Button
               icon={<PrinterOutlined />}
               onClick={handlePrint}
               disabled={loading}
+              style={{ minWidth: 44, minHeight: 44 }}
             />
           </Tooltip>
           <Tooltip title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
             <Button
               icon={isFullscreen ? <CompressOutlined /> : <ExpandOutlined />}
               onClick={toggleFullscreen}
+              style={{ minWidth: 44, minHeight: 44 }}
             />
           </Tooltip>
           <Button
@@ -203,8 +233,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
             onClick={handleDownload}
             loading={downloading}
             disabled={loading}
+            style={isMobile ? { flex: 1, minHeight: 44 } : undefined}
           >
-            Download PDF
+            {isMobile ? 'Download' : 'Download PDF'}
           </Button>
         </Space>
       </div>
@@ -217,7 +248,8 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
           background: '#525659',
           display: 'flex',
           justifyContent: 'center',
-          padding: 24,
+          padding: isMobile ? 8 : 24,
+          WebkitOverflowScrolling: 'touch',
         }}
       >
         {loading ? (
@@ -234,8 +266,8 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
         ) : (
           <div
             style={{
-              width: '8.5in',
-              minHeight: '11in',
+              width: isMobile ? '100%' : '8.5in',
+              minHeight: isMobile ? 'auto' : '11in',
               background: '#fff',
               boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
               borderRadius: borderRadius.sm,
@@ -248,8 +280,9 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
               style={{
                 width: '100%',
                 height: '100%',
-                minHeight: '11in',
+                minHeight: isMobile ? '80vh' : '11in',
                 border: 'none',
+                display: 'block',
               }}
               title={`${documentLabel} Preview`}
             />

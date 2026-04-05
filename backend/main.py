@@ -21,6 +21,9 @@ from app.domains.settings.models import (
 )
 from app.domains.admin.models import LoginLog, UserActivity
 from app.domains.tools.models import ToolSession, ToolFile
+from app.domains.tools.modules.pdf_editor.models import (
+    PdfDocument, SignRequest, SignAuditEvent, CompanyDocument
+)
 
 # Import tool converters (registers them in the converter registry)
 import app.domains.tools.modules.roof_analyzer.converter  # noqa: F401
@@ -39,6 +42,11 @@ from app.domains.admin.api import router as admin_router
 from app.domains.tools.api import router as tools_router
 from app.domains.tools.modules.roof_analyzer.api import router as roof_analyzer_router
 from app.domains.tools.modules.packing.api import router as packing_router
+from app.domains.tools.modules.item_recommender.api import router as item_recommender_router
+from app.domains.tools.modules.pdf_editor.api import router as pdf_editor_router
+from app.domains.tools.modules.pdf_editor.sign_api import router as sign_router
+from app.domains.tools.modules.pdf_editor.sign_api import public_router as sign_public_router
+from app.domains.tools.modules.pdf_editor.company_docs_api import router as company_docs_router
 
 
 @asynccontextmanager
@@ -119,6 +127,11 @@ app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
 app.include_router(tools_router, prefix="/api/tools", tags=["Tools"])
 app.include_router(roof_analyzer_router, prefix="/api/tools/roof-analyzer", tags=["Roof Analyzer"])
 app.include_router(packing_router, prefix="/api/tools/packing", tags=["Packing Estimator"])
+app.include_router(item_recommender_router, prefix="/api/tools/item-recommender", tags=["Item Recommender"])
+app.include_router(pdf_editor_router, prefix="/api/tools/pdf-editor", tags=["PDF Editor"])
+app.include_router(sign_router, prefix="/api/tools/pdf-editor/sign", tags=["E-Sign"])
+app.include_router(sign_public_router, prefix="/api/sign", tags=["E-Sign Public"])
+app.include_router(company_docs_router, prefix="/api/company-documents", tags=["Company Documents"])
 
 
 if __name__ == "__main__":

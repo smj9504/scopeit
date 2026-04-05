@@ -35,7 +35,7 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
             font-size: 9pt;
-            line-height: 1.5;
+            line-height: 1.3;
             color: #1a1a1a;
         }
 
@@ -43,7 +43,7 @@
         .header {
             display: table;
             width: 100%;
-            margin-bottom: 20px;
+            margin-bottom: 14px;
         }
 
         .header-left {
@@ -62,7 +62,7 @@
             font-weight: 600;
             color: #1a1a1a;
             letter-spacing: -0.5px;
-            margin-bottom: 14px;
+            margin-bottom: 10px;
         }
 
         .logo {
@@ -73,7 +73,7 @@
 
         /* Meta Info */
         .meta-table {
-            margin-bottom: 18px;
+            margin-bottom: 12px;
         }
 
         .meta-row {
@@ -100,7 +100,7 @@
         .info-columns {
             display: table;
             width: 100%;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
         }
 
         .info-col {
@@ -111,7 +111,7 @@
 
         .info-col p {
             font-size: 9pt;
-            margin: 2px 0;
+            margin: 1px 0;
             color: #1a1a1a;
         }
 
@@ -132,13 +132,13 @@
             font-weight: 600;
             color: #1a1a1a;
             letter-spacing: -0.3px;
-            margin: 24px 0 6px 0;
+            margin: 16px 0 4px 0;
         }
 
         .service-period {
             font-size: 9pt;
             color: #666;
-            margin-bottom: 18px;
+            margin-bottom: 12px;
         }
 
         /* Items Table */
@@ -165,7 +165,7 @@
 
         .items-table td {
             font-size: 9pt;
-            padding: 10px 0;
+            padding: 7px 0;
             vertical-align: top;
             border-bottom: 1px solid #e8e8e8;
         }
@@ -206,14 +206,14 @@
         .summary-label {
             display: table-cell;
             font-size: 9pt;
-            padding: 7px 0;
+            padding: 5px 0;
             color: #666;
         }
 
         .summary-value {
             display: table-cell;
             font-size: 9pt;
-            padding: 7px 0;
+            padding: 5px 0;
             text-align: right;
             color: #1a1a1a;
         }
@@ -236,7 +236,7 @@
             font-size: 13pt;
             font-weight: 600;
             color: #1a1a1a;
-            margin: 28px 0 12px 0;
+            margin: 18px 0 8px 0;
             letter-spacing: -0.2px;
         }
 
@@ -261,7 +261,7 @@
 
         .payment-history-table td {
             font-size: 9pt;
-            padding: 10px 0;
+            padding: 7px 0;
             border-bottom: 1px solid #e8e8e8;
         }
 
@@ -272,8 +272,8 @@
 
         /* Footer */
         .footer {
-            margin-top: 28px;
-            padding-top: 14px;
+            margin-top: 18px;
+            padding-top: 10px;
             border-top: 1px solid #e8e8e8;
             font-size: 8pt;
             color: #888;
@@ -317,10 +317,12 @@
             <span class="meta-label">Receipt number</span>
             <span class="meta-value">{{ receipt_number }}</span>
         </div>
+        {% if payment_date %}
         <div class="meta-row">
             <span class="meta-label">Date paid</span>
             <span class="meta-value">{{ payment_date | format_date }}</span>
         </div>
+        {% endif %}
         {% if reference_number %}
         <div class="meta-row">
             <span class="meta-label">Reference</span>
@@ -354,7 +356,7 @@
     </div>
 
     <!-- Amount Headline -->
-    <div class="amount-headline">{{ this_payment | format_currency }} paid on {{ payment_date | format_date }}</div>
+    <div class="amount-headline">{{ this_payment | format_currency }}{% if payment_date %} paid on {{ payment_date | format_date }}{% endif %}</div>
     <div class="service-period">Invoice #{{ invoice_number }}</div>
 
     <!-- Items Table -->
@@ -410,7 +412,7 @@
         <tbody>
             <tr>
                 <td>{{ payment_method_label }}</td>
-                <td>{{ payment_date | format_date }}</td>
+                <td>{% if payment_date %}{{ payment_date | format_date }}{% else %}—{% endif %}</td>
                 <td>{{ this_payment | format_currency }}</td>
                 <td>{{ receipt_number }}</td>
             </tr>

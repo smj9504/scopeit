@@ -12,7 +12,7 @@ export interface User {
   role: 'admin' | 'manager' | 'staff';
   isActive: boolean;
   isSuperuser?: boolean;
-  defaultPdfTemplate?: 'classic' | 'modern' | 'professional';
+  defaultPdfTemplate?: 'classic' | 'modern' | 'professional' | 'detailed';
   createdAt: string;
 }
 

@@ -3,7 +3,7 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { message } from 'antd';
+import { App } from 'antd';
 import { toolService } from '@/services/toolService';
 import type { ToolSessionCreate, ToolSessionUpdate, CreateEstimateFromToolRequest } from '@/types/tools';
 
@@ -62,6 +62,7 @@ export function useDeleteToolSession() {
 
 export function useCreateEstimateFromTool() {
   const navigate = useNavigate();
+  const { message } = App.useApp();
   return useMutation({
     mutationFn: ({ sessionId, data }: { sessionId: string; data?: CreateEstimateFromToolRequest }) =>
       toolService.createEstimateFromSession(sessionId, data),

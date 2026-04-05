@@ -71,6 +71,7 @@ class LineItemResponse(LineItemBase):
     id: str
     company_id: str
     created_by: str
+    tool_id: Optional[str] = None
     is_active: bool
     created_at: datetime
     updated_at: Optional[datetime] = None

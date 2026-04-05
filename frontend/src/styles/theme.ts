@@ -122,24 +122,38 @@ export const antdTheme = {
   components: {
     Button: {
       borderRadius: 6,
-      controlHeight: 40,
+      controlHeight: 36,
       fontWeight: 600,
+      fontSize: 14,
     },
     Input: {
       borderRadius: 6,
-      controlHeight: 40,
+      controlHeight: 36,
+      fontSize: 14,
     },
     InputNumber: {
       borderRadius: 6,
-      controlHeight: 40,
+      controlHeight: 36,
+      fontSize: 14,
     },
     Select: {
       borderRadius: 6,
-      controlHeight: 40,
+      controlHeight: 36,
+      fontSize: 14,
+    },
+    DatePicker: {
+      borderRadius: 6,
+      controlHeight: 36,
+      fontSize: 14,
+    },
+    Form: {
+      labelFontSize: 14,
+      fontSize: 14,
     },
     Table: {
       borderRadius: 8,
       headerBg: colors.bgLight,
+      fontSize: 14,
     },
     Card: {
       borderRadius: 12,

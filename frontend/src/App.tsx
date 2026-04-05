@@ -25,10 +25,14 @@ const InvoicesListPage = lazy(() => import('@/pages/app/invoices/InvoicesListPag
 const InvoiceDetailPage = lazy(() => import('@/pages/app/invoices/InvoiceDetailPage'));
 const InvoiceEditorPage = lazy(() => import('@/pages/app/invoices/InvoiceEditorPage'));
 const CustomersListPage = lazy(() => import('@/pages/app/customers/CustomersListPage'));
+const CustomerDetailPage = lazy(() => import('@/pages/app/customers/CustomerDetailPage'));
 const LineItemsListPage = lazy(() => import('@/pages/app/line_items/LineItemsListPage'));
 const SettingsPage = lazy(() => import('@/pages/app/settings/SettingsPage'));
 const ToolsPage = lazy(() => import('@/pages/app/tools/ToolsPage'));
 const ToolWrapper = lazy(() => import('@/pages/app/tools/ToolWrapper'));
+
+// Public pages (no auth)
+const SignPage = lazy(() => import('@/pages/public/SignPage'));
 
 // Admin pages (Superuser only)
 const AdminLayout = lazy(() => import('@/components/layout/AdminLayout'));
@@ -143,6 +147,9 @@ const App: React.FC = () => {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/auth/callback" element={<OAuthCallbackPage />} />
 
+              {/* Public E-Sign Page (no auth required) */}
+              <Route path="/sign/:token" element={<SignPage />} />
+
               {/* Protected App Routes */}
               <Route
                 path="/app"
@@ -169,7 +176,7 @@ const App: React.FC = () => {
                 
                 {/* Customers */}
                 <Route path="customers" element={<CustomersListPage />} />
-                <Route path="customers/:id" element={<div>Customer Detail</div>} />
+                <Route path="customers/:id" element={<CustomerDetailPage />} />
                 
                 {/* Line Items */}
                 <Route path="line-items" element={<LineItemsListPage />} />

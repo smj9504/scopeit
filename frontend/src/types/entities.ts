@@ -43,7 +43,7 @@ export interface PdfTemplateInfo {
   description: string;
 }
 
-export type PdfTemplateId = 'classic' | 'modern' | 'professional';
+export type PdfTemplateId = 'classic' | 'modern' | 'professional' | 'detailed';
 
 // Customer
 export interface Customer {
@@ -285,7 +285,7 @@ export interface Payment {
   id: string;
   amount: number;
   paymentMethod: PaymentMethod;
-  paymentDate: string;
+  paymentDate?: string | null;
   referenceNumber?: string;
   notes?: string;
   createdAt: string;

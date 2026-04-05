@@ -23,7 +23,7 @@ const ToolsPage: React.FC = () => {
 
   return (
     <div>
-      <div style={{ marginBottom: 32 }}>
+      <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <AppstoreOutlined style={{ fontSize: 24, color: colors.primary }} />
           <Title level={2} style={{ margin: 0, fontFamily: fonts.heading }}>
@@ -38,9 +38,9 @@ const ToolsPage: React.FC = () => {
       {!tools || tools.length === 0 ? (
         <Empty description="No tools available" />
       ) : (
-        <Row gutter={[24, 24]}>
+        <Row gutter={[16, 16]}>
           {tools.map(tool => (
-            <Col key={tool.id} xs={24} sm={12} lg={8} xl={6}>
+            <Col key={tool.id} xs={24} sm={12} lg={8}>
               <ToolCard tool={tool} />
             </Col>
           ))}

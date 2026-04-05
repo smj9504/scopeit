@@ -86,10 +86,26 @@ class Settings(BaseSettings):
     EMAIL_FROM_NAME: str = "ScopeIt"
     
     # ===================
+    # AI / Vision (Packing Tool)
+    # ===================
+    ANTHROPIC_API_KEY: Optional[str] = None
+    VISION_BATCH_INTER_ROOM_DELAY: float = 0.5
+    VISION_BATCH_MAX_ROOMS: int = 15
+    VISION_RATE_LIMIT_RETRIES: int = 3
+    VISION_RATE_LIMIT_BASE_DELAY: float = 2.0
+
+    # ===================
     # File Storage
     # ===================
     STORAGE_PROVIDER: str = "local"  # local, s3
     STORAGE_BASE_DIR: str = "uploads"
+
+    # ===================
+    # PDF Editor
+    # ===================
+    PDF_MAX_UPLOAD_SIZE_MB: int = 50
+    PDF_THUMBNAIL_SIZE: int = 300
+    PDF_SIGN_TOKEN_EXPIRY_DAYS: int = 14
     
     class Config:
         env_file = ".env.local"

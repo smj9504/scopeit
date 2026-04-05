@@ -34,7 +34,7 @@ export interface BulkActionRequest {
 export interface RecordPaymentRequest {
   amount: number;
   paymentMethod: PaymentMethod;
-  paymentDate: string;
+  paymentDate?: string;
   referenceNumber?: string;
   notes?: string;
 }
@@ -190,6 +190,17 @@ export const invoiceService = {
     record: async (invoiceId: string, data: RecordPaymentRequest): Promise<Invoice> => {
       const response = await api.post<Invoice>(
         `/invoices/${invoiceId}/payments`,
+        data
+      );
+      return response.data;
+    },
+
+    /**
+     * Update a payment
+     */
+    update: async (invoiceId: string, paymentId: string, data: RecordPaymentRequest): Promise<Invoice> => {
+      const response = await api.patch<Invoice>(
+        `/invoices/${invoiceId}/payments/${paymentId}`,
         data
       );
       return response.data;

@@ -3,7 +3,7 @@
  */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Table, Button, Input, Card, Modal, Form, message, Spin } from 'antd';
+import { Table, Button, Input, Card, Modal, Form, App, Spin } from 'antd';
 import {
   PlusOutlined,
   SearchOutlined,
@@ -11,6 +11,7 @@ import {
   MailOutlined,
   PhoneOutlined,
   ExclamationCircleOutlined,
+  EnvironmentOutlined,
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -23,6 +24,7 @@ import type { ColumnsType } from 'antd/es/table';
 const CustomersListPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { message } = App.useApp();
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -141,7 +143,7 @@ const CustomersListPage: React.FC = () => {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
-      width: 150,
+      width: 160,
       ellipsis: true,
       render: (text, record) => (
         <div>
@@ -155,8 +157,9 @@ const CustomersListPage: React.FC = () => {
     {
       title: 'Contact',
       key: 'contact',
-      width: 180,
+      width: 200,
       ellipsis: true,
+      responsive: ['sm'] as const,
       render: (_, record) => (
         <div style={{ fontSize: 13 }}>
           {record.email && (
@@ -175,7 +178,7 @@ const CustomersListPage: React.FC = () => {
     {
       title: 'Location',
       key: 'location',
-      width: 120,
+      width: 140,
       ellipsis: true,
       responsive: ['md'] as const,
       render: (_, record) => (
@@ -191,14 +194,24 @@ const CustomersListPage: React.FC = () => {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontFamily: fonts.heading, fontSize: 24, fontWeight: 700, margin: 0 }}>Customers</h1>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: isMobile ? 'stretch' : 'center',
+          flexDirection: isMobile ? 'column' : 'row',
+          marginBottom: 24,
+          gap: 12,
+        }}
+      >
+        <h1 style={{ fontFamily: fonts.heading, fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0 }}>
+          Customers
+        </h1>
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          size="large"
           onClick={() => handleOpenModal()}
-          style={{ background: colors.primary, fontWeight: 600, height: 44, borderRadius: 8 }}
+          style={{ background: colors.primary, fontWeight: 600, borderRadius: 8, width: isMobile ? '100%' : undefined }}
         >
           Add Customer
         </Button>
@@ -212,22 +225,98 @@ const CustomersListPage: React.FC = () => {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{ width: isMobile ? '100%' : 300 }}
-          size="large"
           allowClear
         />
       </Card>
 
-      {/* Table */}
-      <Card style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
+      {/* Mobile card view */}
+      <div className="mobile-card-view">
+        {isLoading ? (
+          <div style={{ padding: '32px 0', textAlign: 'center', color: colors.textMuted }}>
+            Loading...
+          </div>
+        ) : customers.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center' }}>
+            <UserOutlined style={{ fontSize: 40, color: colors.textMuted, marginBottom: 12 }} />
+            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>No customers yet</div>
+            <div style={{ color: colors.textSecondary, marginBottom: 20, fontSize: 14 }}>
+              Add your first customer to get started
+            </div>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => handleOpenModal()}
+              style={{ background: colors.primary, width: '100%' }}
+            >
+              Add Customer
+            </Button>
+          </div>
+        ) : (
+          customers.map((record) => (
+            <div
+              key={record.id}
+              className="mobile-card"
+              onClick={() => navigate(`/app/customers/${record.id}`)}
+              style={{ cursor: 'pointer' }}
+            >
+              <div className="mobile-card-header">
+                <span className="mobile-card-title">{record.name}</span>
+              </div>
+              {record.contactName && (
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label">Contact</span>
+                  <span className="mobile-card-value">{record.contactName}</span>
+                </div>
+              )}
+              {record.email && (
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <MailOutlined /> Email
+                  </span>
+                  <span className="mobile-card-value" style={{ maxWidth: '55%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {record.email}
+                  </span>
+                </div>
+              )}
+              {record.phone && (
+                <div className="mobile-card-row">
+                  <span className="mobile-card-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <PhoneOutlined /> Phone
+                  </span>
+                  <span className="mobile-card-value">{record.phone}</span>
+                </div>
+              )}
+              {(record.city || record.state) && (
+                <div className="mobile-card-row" style={{ borderBottom: 'none' }}>
+                  <span className="mobile-card-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <EnvironmentOutlined /> Location
+                  </span>
+                  <span className="mobile-card-value">
+                    {[record.city, record.state].filter(Boolean).join(', ')}
+                  </span>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+        {customers.length > 0 && (
+          <div style={{ textAlign: 'center', color: colors.textMuted, fontSize: 13, padding: '8px 0 4px' }}>
+            {customers.length} customer{customers.length !== 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <Card className="desktop-table" style={{ borderRadius: 12 }} styles={{ body: { padding: 0 } }}>
         <Spin spinning={isLoading}>
           <Table
             columns={columns}
             dataSource={customers}
             rowKey="id"
-            scroll={isMobile ? { x: 380 } : undefined}
+            scroll={{ x: 400 }}
             pagination={{ pageSize: 20, showTotal: (total) => `${total} customers` }}
             onRow={(record) => ({
-              onClick: () => handleOpenModal(record),
+              onClick: () => navigate(`/app/customers/${record.id}`),
               style: { cursor: 'pointer' },
             })}
             locale={{
@@ -309,14 +398,15 @@ const CustomersListPage: React.FC = () => {
           <Form.Item name="addressLine2">
             <Input placeholder="Suite 100 (optional)" />
           </Form.Item>
-          <div style={{ display: 'flex', gap: 12 }}>
+          {/* City / State / ZIP: stack vertically on mobile */}
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 0 : 12 }}>
             <Form.Item name="city" label="City" style={{ flex: 1 }}>
               <Input placeholder="New York" />
             </Form.Item>
-            <Form.Item name="state" label="State" style={{ width: 100 }}>
+            <Form.Item name="state" label="State" style={isMobile ? {} : { width: 100 }}>
               <Input placeholder="NY" />
             </Form.Item>
-            <Form.Item name="zipcode" label="ZIP" style={{ width: 100 }}>
+            <Form.Item name="zipcode" label="ZIP" style={isMobile ? {} : { width: 100 }}>
               <Input placeholder="10001" />
             </Form.Item>
           </div>

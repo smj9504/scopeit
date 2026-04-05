@@ -3,7 +3,7 @@
  */
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Form, Input, Button, message, Result } from 'antd';
+import { Form, Input, Button, App, Result } from 'antd';
 import { MailOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { authService } from '@/services/authService';
@@ -11,6 +11,7 @@ import { getErrorMessage } from '@/services/api';
 import { colors, fonts } from '@/styles/theme';
 
 const ForgotPasswordPage: React.FC = () => {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
@@ -49,20 +50,13 @@ const ForgotPasswordPage: React.FC = () => {
         </Link>
       </header>
 
-      <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <main className="auth-page-main">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           style={{ width: '100%', maxWidth: 400 }}
         >
-          <div
-            style={{
-              background: colors.bgWhite,
-              border: `1px solid ${colors.border}`,
-              borderRadius: 12,
-              padding: 40,
-            }}
-          >
+          <div className="auth-card">
             {sent ? (
               <Result
                 status="success"
@@ -100,7 +94,7 @@ const ForgotPasswordPage: React.FC = () => {
                       { type: 'email', message: 'Invalid email' },
                     ]}
                   >
-                    <Input prefix={<MailOutlined style={{ color: colors.textMuted }} />} placeholder="Email" />
+                    <Input prefix={<MailOutlined style={{ color: colors.textMuted }} />} placeholder="Email" autoComplete="email" />
                   </Form.Item>
 
                   <Button
@@ -108,7 +102,7 @@ const ForgotPasswordPage: React.FC = () => {
                     htmlType="submit"
                     loading={loading}
                     block
-                    style={{ height: 44, fontWeight: 600, background: colors.primary }}
+                    style={{ fontWeight: 600, background: colors.primary }}
                   >
                     Send Reset Link
                   </Button>

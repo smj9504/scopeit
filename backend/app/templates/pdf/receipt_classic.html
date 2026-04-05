@@ -308,10 +308,12 @@
             <span class="meta-label">Receipt number</span>
             <span class="meta-value">{{ receipt_number }}</span>
         </div>
+        {% if payment_date %}
         <div class="meta-row">
             <span class="meta-label">Date paid</span>
             <span class="meta-value">{{ payment_date | format_date }}</span>
         </div>
+        {% endif %}
         {% if reference_number %}
         <div class="meta-row">
             <span class="meta-label">Reference</span>
@@ -345,7 +347,7 @@
     </div>
 
     <!-- Amount Headline -->
-    <div class="amount-headline">{{ this_payment | format_currency }} paid on {{ payment_date | format_date }}</div>
+    <div class="amount-headline">{{ this_payment | format_currency }}{% if payment_date %} paid on {{ payment_date | format_date }}{% endif %}</div>
     <div class="service-period">Invoice #{{ invoice_number }}</div>
 
     <!-- Items Table -->
@@ -401,7 +403,7 @@
         <tbody>
             <tr>
                 <td>{{ payment_method_label }}</td>
-                <td>{{ payment_date | format_date }}</td>
+                <td>{% if payment_date %}{{ payment_date | format_date }}{% else %}—{% endif %}</td>
                 <td>{{ this_payment | format_currency }}</td>
                 <td>{{ receipt_number }}</td>
             </tr>

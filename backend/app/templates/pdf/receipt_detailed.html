@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Receipt {{ receipt_number }}</title>
+    <style>
+        @page {
+            size: letter;
+            margin: 0.5in 0.5in 0.6in 0.5in;
+
+            @bottom-left {
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                font-size: 7.5pt;
+                color: #999;
+            }
+
+            @bottom-right {
+                content: "Receipt #" counter(page);
+                font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                font-size: 7.5pt;
+                color: #999;
+            }
+        }
+
+        /* Screen preview */
+        @media screen {
+            body {
+                padding: 0.5in;
+                max-width: 8.5in;
+                margin: 0 auto;
+                background: #f5f5f5;
+            }
+            .page-wrapper {
+                background: white;
+                padding: 0.4in;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-size: 9pt;
+            line-height: 1.45;
+            color: #333;
+        }
+
+        /* Header */
+        .header {
+            display: table;
+            width: 100%;
+            margin-bottom: 18px;
+            padding-bottom: 14px;
+            border-bottom: 2px solid #333;
+        }
+
+        .header-left {
+            display: table-cell;
+            vertical-align: top;
+            width: 60%;
+        }
+
+        .header-right {
+            display: table-cell;
+            vertical-align: top;
+            text-align: right;
+            width: 40%;
+        }
+
+        .doc-title {
+            font-size: 22pt;
+            font-weight: 700;
+            color: #111;
+            letter-spacing: -0.5px;
+            margin-bottom: 2px;
+        }
+
+        .logo {
+            max-width: 140px;
+            max-height: 48px;
+            object-fit: contain;
+            margin-bottom: 10px;
+        }
+
+        /* Meta Info */
+        .meta-table {
+            margin-bottom: 16px;
+        }
+
+        .meta-row {
+            display: table;
+            width: 100%;
+            margin-bottom: 2px;
+        }
+
+        .meta-label {
+            display: table-cell;
+            width: 120px;
+            font-size: 8.5pt;
+            color: #666;
+            font-weight: 600;
+        }
+
+        .meta-value {
+            display: table-cell;
+            font-size: 8.5pt;
+            color: #333;
+        }
+
+        /* Info Columns */
+        .info-columns {
+            display: table;
+            width: 100%;
+            margin-bottom: 22px;
+        }
+
+        .info-col {
+            display: table-cell;
+            vertical-align: top;
+            width: 50%;
+        }
+
+        .info-label {
+            font-size: 7pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #999;
+            margin-bottom: 4px;
+        }
+
+        .info-col p {
+            font-size: 8.5pt;
+            margin: 1px 0;
+            color: #444;
+        }
+
+        .info-col .name {
+            font-weight: 700;
+            font-size: 10pt;
+            color: #111;
+        }
+
+        /* Amount Headline */
+        .amount-box {
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            padding: 14px 18px;
+            margin-bottom: 22px;
+            display: table;
+            width: 100%;
+        }
+
+        .amount-box-left {
+            display: table-cell;
+            vertical-align: middle;
+        }
+
+        .amount-box-right {
+            display: table-cell;
+            vertical-align: middle;
+            text-align: right;
+        }
+
+        .amount-headline {
+            font-size: 18pt;
+            font-weight: 700;
+            color: #111;
+        }
+
+        .amount-desc {
+            font-size: 8.5pt;
+            color: #666;
+            margin-top: 2px;
+        }
+
+        .paid-badge {
+            display: inline-block;
+            background: #dcfce7;
+            color: #166534;
+            font-size: 9pt;
+            font-weight: 700;
+            padding: 4px 14px;
+            border-radius: 3px;
+            border: 1px solid #bbf7d0;
+            letter-spacing: 0.5px;
+        }
+
+        /* Items Table */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 8px;
+        }
+
+        .items-table thead tr {
+            background: #f5f5f5;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .items-table th {
+            padding: 5px 8px;
+            font-size: 7.5pt;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            text-align: left;
+            color: #666;
+        }
+
+        .items-table th.text-right {
+            text-align: right;
+        }
+
+        .items-table td {
+            font-size: 8.5pt;
+            padding: 8px;
+            vertical-align: top;
+        }
+
+        .items-table td.text-right {
+            text-align: right;
+        }
+
+        /* Summary */
+        .summary-section {
+            display: table;
+            width: 100%;
+            margin-top: 6px;
+        }
+
+        .summary-spacer {
+            display: table-cell;
+            width: 55%;
+        }
+
+        .summary-content {
+            display: table-cell;
+            width: 45%;
+        }
+
+        .summary-row {
+            display: table;
+            width: 100%;
+            border-top: 1px solid #eee;
+        }
+
+        .summary-row:first-child {
+            border-top: none;
+        }
+
+        .summary-label {
+            display: table-cell;
+            font-size: 8.5pt;
+            padding: 6px 8px;
+            color: #444;
+        }
+
+        .summary-value {
+            display: table-cell;
+            font-size: 8.5pt;
+            padding: 6px 8px;
+            text-align: right;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .summary-row.total {
+            border-top: 2px solid #333;
+            background: #f9f9f9;
+        }
+
+        .summary-row.total .summary-label {
+            font-weight: 700;
+            font-size: 9pt;
+            color: #111;
+        }
+
+        .summary-row.total .summary-value {
+            font-weight: 700;
+            font-size: 9pt;
+            color: #111;
+        }
+
+        /* Section Title */
+        .section-title-bar {
+            background: #333;
+            color: #fff;
+            padding: 7px 10px;
+            font-size: 9.5pt;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 24px;
+            margin-bottom: 0;
+        }
+
+        /* Payment History Table */
+        .payment-history-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .payment-history-table thead tr {
+            background: #f5f5f5;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .payment-history-table th {
+            padding: 5px 8px;
+            font-size: 7.5pt;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            text-align: left;
+            color: #666;
+        }
+
+        .payment-history-table th.text-right {
+            text-align: right;
+        }
+
+        .payment-history-table td {
+            font-size: 8.5pt;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .payment-history-table td.text-right {
+            text-align: right;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 28px;
+            padding-top: 12px;
+            border-top: 1px solid #ddd;
+            font-size: 7.5pt;
+            color: #777;
+            line-height: 1.5;
+        }
+
+        .balance-status {
+            font-weight: 700;
+        }
+
+        .balance-status.paid {
+            color: #166534;
+        }
+
+        .balance-status.due {
+            color: #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            {% if company.logo_url %}
+            <img src="{{ company.logo_url }}" alt="Logo" class="logo"><br>
+            {% endif %}
+            <div class="doc-title">Payment Receipt</div>
+        </div>
+        <div class="header-right">
+            <div style="font-size: 8.5pt; color: #555; line-height: 1.6; text-align: right;">
+                <strong>Receipt #:</strong> {{ receipt_number }}{% if payment_date %}<br>
+                <strong>Date:</strong> {{ payment_date | format_date }}{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Meta Info -->
+    <div class="meta-table">
+        <div class="meta-row">
+            <span class="meta-label">Invoice Number</span>
+            <span class="meta-value">{{ invoice_number }}</span>
+        </div>
+        <div class="meta-row">
+            <span class="meta-label">Payment Method</span>
+            <span class="meta-value">{{ payment_method_label }}</span>
+        </div>
+        {% if reference_number %}
+        <div class="meta-row">
+            <span class="meta-label">Reference</span>
+            <span class="meta-value">{{ reference_number }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Company & Customer Info -->
+    <div class="info-columns">
+        <div class="info-col">
+            <div class="info-label">From</div>
+            <p class="name">{{ company.name }}</p>
+            {% if company.address_line1 %}<p>{{ company.address_line1 }}</p>{% endif %}
+            {% if company.address_line2 %}<p>{{ company.address_line2 }}</p>{% endif %}
+            {% if company.city or company.state or company.zipcode %}
+            <p>{{ company.city }}{% if company.city and company.state %}, {% endif %}{{ company.state }} {{ company.zipcode }}</p>
+            {% endif %}
+            {% if company.phone %}<p>{{ company.phone }}</p>{% endif %}
+            {% if company.email %}<p>{{ company.email }}</p>{% endif %}
+        </div>
+        <div class="info-col">
+            <div class="info-label">Received From</div>
+            <p class="name">{{ customer.name }}</p>
+            {% if customer.address %}<p>{{ customer.address }}</p>{% endif %}
+            {% if customer.address_line2 %}<p>{{ customer.address_line2 }}</p>{% endif %}
+            {% if customer.city or customer.state or customer.zipcode %}
+            <p>{{ customer.city }}{% if customer.city and customer.state %}, {% endif %}{{ customer.state }} {{ customer.zipcode }}</p>
+            {% endif %}
+            {% if customer.email %}<p>{{ customer.email }}</p>{% endif %}
+        </div>
+    </div>
+
+    <!-- Amount Box -->
+    <div class="amount-box">
+        <div class="amount-box-left">
+            <div class="amount-headline">{{ this_payment | format_currency }}</div>
+            <div class="amount-desc">Payment received{% if payment_date %} on {{ payment_date | format_date }}{% endif %} for Invoice #{{ invoice_number }}</div>
+        </div>
+        <div class="amount-box-right">
+            {% if remaining_balance <= 0.01 %}
+            <span class="paid-badge">PAID IN FULL</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Items Table -->
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th style="width: 55%;">Description</th>
+                <th class="text-right" style="width: 15%;">Qty</th>
+                <th class="text-right" style="width: 15%;">Unit Price</th>
+                <th class="text-right" style="width: 15%;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Payment received for Invoice #{{ invoice_number }}</td>
+                <td class="text-right">1</td>
+                <td class="text-right">{{ this_payment | format_currency }}</td>
+                <td class="text-right">{{ this_payment | format_currency }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Summary -->
+    <div class="summary-section">
+        <div class="summary-spacer"></div>
+        <div class="summary-content">
+            <div class="summary-row">
+                <span class="summary-label">Subtotal</span>
+                <span class="summary-value">{{ this_payment | format_currency }}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Total</span>
+                <span class="summary-value">{{ this_payment | format_currency }}</span>
+            </div>
+            <div class="summary-row total">
+                <span class="summary-label">Amount Paid</span>
+                <span class="summary-value">{{ this_payment | format_currency }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment History -->
+    <div class="section-title-bar">Payment History</div>
+    <table class="payment-history-table">
+        <thead>
+            <tr>
+                <th style="width: 30%;">Payment Method</th>
+                <th style="width: 25%;">Date</th>
+                <th class="text-right" style="width: 20%;">Amount</th>
+                <th style="width: 25%;">Receipt #</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>{{ payment_method_label }}</td>
+                <td>{% if payment_date %}{{ payment_date | format_date }}{% else %}—{% endif %}</td>
+                <td class="text-right">{{ this_payment | format_currency }}</td>
+                <td>{{ receipt_number }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- Invoice Summary -->
+    <div class="section-title-bar" style="margin-top: 20px;">Invoice Summary</div>
+    <div class="summary-section" style="margin-top: 0;">
+        <div class="summary-spacer"></div>
+        <div class="summary-content">
+            <div class="summary-row">
+                <span class="summary-label">Invoice Total</span>
+                <span class="summary-value">{{ original_total | format_currency }}</span>
+            </div>
+            <div class="summary-row">
+                <span class="summary-label">Total Paid</span>
+                <span class="summary-value">{{ total_paid | format_currency }}</span>
+            </div>
+            <div class="summary-row total">
+                <span class="summary-label">Balance Due</span>
+                {% if remaining_balance <= 0.01 %}
+                <span class="summary-value balance-status paid">$0.00</span>
+                {% else %}
+                <span class="summary-value balance-status due">{{ remaining_balance | format_currency }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        {% if payment_notes %}
+        <p style="margin-bottom: 6px;">Note: {{ payment_notes }}</p>
+        {% endif %}
+        <p>This receipt confirms payment received. Please retain for your records.</p>
+    </div>
+</body>
+</html>

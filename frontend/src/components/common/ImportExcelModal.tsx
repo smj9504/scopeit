@@ -23,6 +23,8 @@ import {
   UploadOutlined,
 } from '@ant-design/icons';
 import { colors } from '@/styles/theme';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { formatCurrency } from '@/utils/formatters';
 import type { ExcelParseResult, ExcelParsedSection } from '@/types/entities';
 import type { ColumnsType } from 'antd/es/table';
 
@@ -60,6 +62,7 @@ export function ImportExcelModal({
   onParseFile,
   importing = false,
 }: ImportExcelModalProps) {
+  const isMobile = useIsMobile();
   const [parseResult, setParseResult] = useState<ExcelParseResult | null>(null);
   const [parsing, setParsing] = useState(false);
   const [fileName, setFileName] = useState('');
@@ -117,7 +120,7 @@ export function ImportExcelModal({
       dataIndex: 'unit_price',
       width: 100,
       align: 'right',
-      render: (v: number) => `$${v.toFixed(2)}`,
+      render: (v: number) => formatCurrency(v),
     },
     {
       title: 'Total',
@@ -125,7 +128,7 @@ export function ImportExcelModal({
       width: 100,
       align: 'right',
       render: (_: any, record: PreviewRow) =>
-        `$${(record.quantity * record.unit_price).toFixed(2)}`,
+        formatCurrency(record.quantity * record.unit_price),
     },
     {
       title: 'Tax',
@@ -154,29 +157,43 @@ export function ImportExcelModal({
       open={open}
       onCancel={handleClose}
       title={`Import ${label} from Excel`}
-      width={920}
+      width={isMobile ? '100%' : 920}
+      style={isMobile ? { top: 0, maxWidth: '100%', margin: 0, paddingBottom: 0 } : undefined}
+      centered={!isMobile}
       footer={
         parseResult
-          ? [
-              <Button key="cancel" onClick={handleClose}>
+          ? (
+            <div style={{ display: 'flex', gap: 8, flexDirection: isMobile ? 'column' : 'row', justifyContent: 'flex-end' }}>
+              <Button
+                key="cancel"
+                onClick={handleClose}
+                style={isMobile ? { width: '100%', minHeight: 44 } : undefined}
+              >
                 Cancel
-              </Button>,
+              </Button>
               <Button
                 key="import"
                 type="primary"
                 onClick={handleImport}
                 loading={importing}
                 icon={<CheckCircleOutlined />}
-                style={{ background: colors.primary }}
+                style={isMobile ? { width: '100%', minHeight: 44, background: colors.primary } : { background: colors.primary }}
               >
                 Import {parseResult.total_items} Items
-              </Button>,
-            ]
-          : [
-              <Button key="cancel" onClick={handleClose}>
+              </Button>
+            </div>
+            )
+          : (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Button
+                key="cancel"
+                onClick={handleClose}
+                style={isMobile ? { width: '100%', minHeight: 44 } : undefined}
+              >
                 Cancel
-              </Button>,
-            ]
+              </Button>
+            </div>
+            )
       }
     >
       {/* Template download banner */}
@@ -189,7 +206,7 @@ export function ImportExcelModal({
           border: '1px solid #d6e4ff',
         }}
       >
-        <Space>
+        <Space wrap>
           <FileExcelOutlined style={{ color: '#217346', fontSize: 18 }} />
           <Text>Need the template?</Text>
           <Button
@@ -213,7 +230,7 @@ export function ImportExcelModal({
             return false;
           }}
           disabled={parsing}
-          style={{ padding: '20px 0' }}
+          style={{ padding: isMobile ? '32px 0' : '20px 0' }}
         >
           {parsing ? (
             <div style={{ padding: 24 }}>
@@ -222,10 +239,10 @@ export function ImportExcelModal({
           ) : (
             <>
               <p className="ant-upload-drag-icon">
-                <InboxOutlined style={{ color: colors.primary, fontSize: 40 }} />
+                <InboxOutlined style={{ color: colors.primary, fontSize: isMobile ? 48 : 40 }} />
               </p>
               <p className="ant-upload-text">
-                Click or drag an Excel file here
+                {isMobile ? 'Tap to select an Excel file' : 'Click or drag an Excel file here'}
               </p>
               <p className="ant-upload-hint">
                 Upload a .xlsx file with your {documentType} line items
@@ -267,14 +284,15 @@ export function ImportExcelModal({
             />
           )}
 
-          <Table
-            columns={previewColumns}
-            dataSource={previewData}
-            size="small"
-            pagination={false}
-            scroll={{ y: 300 }}
-            style={{ marginBottom: 16 }}
-          />
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: 16 }}>
+            <Table
+              columns={previewColumns}
+              dataSource={previewData}
+              size="small"
+              pagination={false}
+              scroll={{ y: 300, x: 'max-content' }}
+            />
+          </div>
 
           <Button
             icon={<UploadOutlined />}
@@ -282,6 +300,7 @@ export function ImportExcelModal({
               setParseResult(null);
               setFileName('');
             }}
+            style={isMobile ? { width: '100%', minHeight: 44 } : undefined}
           >
             Upload a different file
           </Button>

@@ -15,13 +15,14 @@ import {
   Modal,
   Form,
   DatePicker,
-  message,
+  App,
   Divider,
   Tooltip,
   Tag,
   Spin,
   List,
   AutoComplete,
+  Space,
 } from 'antd';
 import {
   PlusOutlined,
@@ -42,6 +43,7 @@ import {
   CameraOutlined,
   PaperClipOutlined,
   UploadOutlined,
+  AppstoreAddOutlined,
 } from '@ant-design/icons';
 import {
   DndContext,
@@ -62,8 +64,9 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { motion, AnimatePresence } from 'framer-motion';
 import dayjs from 'dayjs';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { colors, fonts } from '@/styles/theme';
+import { formatCurrency } from '@/utils/formatters';
 import { CustomerSelector, CustomerData } from '@/components/features/CustomerSelector';
 import { invoiceService } from '@/services/invoiceService';
 import { lineItemService } from '@/services/lineItemService';
@@ -73,7 +76,7 @@ import { useIsMobile, useIsNarrow } from '@/hooks/useIsMobile';
 import { useBackNav } from '@/hooks/useHeaderNav';
 import { MobileLineItemDrawer, MobileLineItemCard } from '@/components/common/MobileLineItemDrawer';
 import { PdfPreviewModal } from '@/components/features/PdfPreviewModal';
-import type { InvoiceStatus, InvoiceCreate, InvoiceUpdate, Invoice, LineItem, PdfTemplateInfo, PdfTemplateId } from '@/types/entities';
+import type { InvoiceStatus, InvoiceCreate, InvoiceUpdate, Invoice, LineItem, Payment, PaymentMethod, PdfTemplateInfo, PdfTemplateId } from '@/types/entities';
 
 // Types
 interface LineItemImage {
@@ -94,6 +97,7 @@ interface LineItemData {
   orderIndex: number;
   notes?: string[];
   images?: LineItemImage[];
+  saveToLibrary?: boolean;
 }
 
 interface SectionData {
@@ -135,6 +139,7 @@ const SortableLineItem: React.FC<{
     transition,
     isDragging,
   } = useSortable({ id: item.id });
+  const isNarrow = useIsNarrow();
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -146,6 +151,12 @@ const SortableLineItem: React.FC<{
   const hasNotes = item.notes && item.notes.length > 0;
   const hasPhotos = item.images && item.images.length > 0;
 
+  // On narrow/iPad screens shrink numeric column widths to fit
+  const qtyWidth = isNarrow ? 68 : 80;
+  const unitWidth = isNarrow ? 64 : 80;
+  const priceWidth = isNarrow ? 90 : 100;
+  const totalWidth = isNarrow ? 84 : 100;
+
   return (
     <div
       ref={setNodeRef}
@@ -153,7 +164,7 @@ const SortableLineItem: React.FC<{
         ...style,
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
+        gap: isNarrow ? 4 : 8,
         padding: '8px 12px',
         background: isSelected ? '#eff6ff' : colors.bgWhite,
         borderBottom: `1px solid ${colors.border}`,
@@ -164,16 +175,16 @@ const SortableLineItem: React.FC<{
       <div
         {...attributes}
         {...listeners}
-        style={{ cursor: 'grab', color: colors.textMuted, padding: 4 }}
+        style={{ cursor: 'grab', color: colors.textMuted, padding: 4, flexShrink: 0 }}
       >
         <HolderOutlined />
       </div>
 
       {/* Checkbox */}
-      <Checkbox checked={isSelected} onChange={onToggleSelect} />
+      <Checkbox checked={isSelected} onChange={onToggleSelect} style={{ flexShrink: 0 }} />
 
       {/* Name */}
-      <div style={{ flex: 2 }}>
+      <div style={{ flex: 2, minWidth: 0 }}>
         <Input
           value={item.name}
           onChange={(e) => onUpdate({ name: e.target.value })}
@@ -195,7 +206,7 @@ const SortableLineItem: React.FC<{
           size="small"
           icon={<FileTextOutlined />}
           onClick={onManageNotes}
-          style={{ color: hasNotes ? colors.primary : colors.textMuted }}
+          style={{ color: hasNotes ? colors.primary : colors.textMuted, flexShrink: 0 }}
         >
           {hasNotes ? item.notes!.length : ''}
         </Button>
@@ -208,25 +219,26 @@ const SortableLineItem: React.FC<{
           size="small"
           icon={<CameraOutlined />}
           onClick={onManagePhotos}
-          style={{ color: hasPhotos ? colors.primary : colors.textMuted }}
+          style={{ color: hasPhotos ? colors.primary : colors.textMuted, flexShrink: 0 }}
         >
           {hasPhotos ? item.images!.length : ''}
         </Button>
       </Tooltip>
 
       {/* Quantity */}
-      <div style={{ width: 80 }}>
+      <div style={{ width: qtyWidth, flexShrink: 0 }}>
         <InputNumber
           value={item.quantity}
           onChange={(val) => onUpdate({ quantity: val ?? 0 })}
           min={0}
           precision={2}
           style={{ width: '100%' }}
+          inputMode="decimal"
         />
       </div>
 
       {/* Unit */}
-      <div style={{ width: 80 }}>
+      <div style={{ width: unitWidth, flexShrink: 0 }}>
         <AutoComplete
           value={item.unit}
           onChange={(val) => onUpdate({ unit: val })}
@@ -245,7 +257,7 @@ const SortableLineItem: React.FC<{
       </div>
 
       {/* Unit Price */}
-      <div style={{ width: 100 }}>
+      <div style={{ width: priceWidth, flexShrink: 0 }}>
         <InputNumber
           value={item.unitPrice}
           onChange={(val) => onUpdate({ unitPrice: val ?? 0 })}
@@ -253,36 +265,18 @@ const SortableLineItem: React.FC<{
           precision={2}
           prefix="$"
           style={{ width: '100%' }}
+          inputMode="decimal"
         />
       </div>
 
       {/* Total */}
-      <div style={{ width: 100, textAlign: 'right' }}>
-        <div style={{ fontWeight: 600 }}>${total.toFixed(2)}</div>
+      <div style={{ width: totalWidth, textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ fontWeight: 600 }}>{formatCurrency(total)}</div>
         {!item.isTaxable && (
           <div style={{ fontSize: 10, color: colors.textMuted }}>Non-tax</div>
         )}
       </div>
 
-      {/* Edit */}
-      <Tooltip title="Edit item details">
-        <Button
-          type="text"
-          icon={<EditOutlined />}
-          onClick={onEdit}
-          style={{ color: colors.textMuted }}
-          size="small"
-        />
-      </Tooltip>
-
-      {/* Delete */}
-      <Button
-        type="text"
-        icon={<DeleteOutlined />}
-        onClick={onDelete}
-        style={{ color: colors.textMuted }}
-        size="small"
-      />
     </div>
   );
 };
@@ -292,10 +286,13 @@ const Section: React.FC<{
   section: SectionData;
   items: LineItemData[];
   selectedIds: Set<string>;
+  clipboardCount: number;
   onToggleCollapse: () => void;
   onUpdateSection: (updates: Partial<SectionData>) => void;
   onDeleteSection: () => void;
   onAddItem: () => void;
+  onAddFromLibrary: () => void;
+  onPasteHere: () => void;
   onToggleSelect: (itemId: string) => void;
   onSelectAllInSection: () => void;
   onUpdateItem: (itemId: string, updates: Partial<LineItemData>) => void;
@@ -310,10 +307,13 @@ const Section: React.FC<{
   section,
   items,
   selectedIds,
+  clipboardCount,
   onToggleCollapse,
   onUpdateSection,
   onDeleteSection,
   onAddItem,
+  onAddFromLibrary,
+  onPasteHere,
   onToggleSelect,
   onSelectAllInSection,
   onUpdateItem,
@@ -325,7 +325,7 @@ const Section: React.FC<{
   onMobileEditItem,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
-  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  const subtotal = items.reduce((sum, item) => sum + Math.round(item.quantity * item.unitPrice * 100) / 100, 0);
   const allSelected = items.length > 0 && items.every((item) => selectedIds.has(item.id));
   const someSelected = items.some((item) => selectedIds.has(item.id));
 
@@ -412,18 +412,44 @@ const Section: React.FC<{
 
           {/* Subtotal */}
           <span style={{ marginLeft: 'auto', fontWeight: 600 }}>
-            ${subtotal.toFixed(2)}
+            {formatCurrency(subtotal)}
           </span>
 
           {/* Add Item Button */}
-          <Button
-            type="text"
-            icon={<PlusOutlined />}
-            onClick={isMobile && onMobileAddItem ? onMobileAddItem : onAddItem}
-            size="small"
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'new',
+                  icon: <PlusOutlined />,
+                  label: 'Add Custom Item',
+                  onClick: isMobile && onMobileAddItem ? onMobileAddItem : onAddItem,
+                },
+                {
+                  key: 'library',
+                  icon: <AppstoreAddOutlined />,
+                  label: 'Add from Library',
+                  onClick: onAddFromLibrary,
+                },
+                ...(clipboardCount > 0
+                  ? [
+                      { type: 'divider' as const },
+                      {
+                        key: 'paste',
+                        icon: <CopyOutlined />,
+                        label: `Paste ${clipboardCount} item${clipboardCount !== 1 ? 's' : ''} here`,
+                        onClick: onPasteHere,
+                      },
+                    ]
+                  : []),
+              ],
+            }}
+            trigger={['click']}
           >
-            Add Item
-          </Button>
+            <Button type="text" icon={<PlusOutlined />} size="small">
+              Add Item
+            </Button>
+          </Dropdown>
 
           {/* More Menu */}
           <Dropdown
@@ -499,9 +525,11 @@ const BulkActionBar: React.FC<{
   onCut: () => void;
   onDelete: () => void;
   onMove: () => void;
+  onSaveToLibrary: () => void;
   onDeselect: () => void;
   isMobile?: boolean;
-}> = ({ selectedCount, onCopy, onCut, onDelete, onMove, onDeselect, isMobile }) => {
+  savingToLibrary?: boolean;
+}> = ({ selectedCount, onCopy, onCut, onDelete, onMove, onSaveToLibrary, onDeselect, isMobile, savingToLibrary }) => {
   return (
     <AnimatePresence>
       <motion.div
@@ -511,7 +539,8 @@ const BulkActionBar: React.FC<{
         transition={{ type: 'spring', damping: 25 }}
         style={{
           position: 'fixed',
-          bottom: isMobile ? 16 : 24,
+          // On mobile: sit above the fixed save bar (approx 72px tall incl safe area)
+          bottom: isMobile ? 80 : 24,
           left: isMobile ? 16 : '50%',
           right: isMobile ? 16 : 'auto',
           transform: isMobile ? 'none' : 'translateX(-50%)',
@@ -572,6 +601,21 @@ const BulkActionBar: React.FC<{
 
         <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.2)' }} />
 
+        <Tooltip title="Save selected items to library">
+          <Button
+            type="text"
+            icon={<SaveOutlined style={{ color: '#10b981' }} />}
+            onClick={onSaveToLibrary}
+            loading={savingToLibrary}
+            size={isMobile ? 'small' : 'middle'}
+            style={{ color: '#10b981', fontWeight: 600 }}
+          >
+            {!isMobile && 'Save'}
+          </Button>
+        </Tooltip>
+
+        <div style={{ width: 1, height: 24, background: 'rgba(255,255,255,0.2)' }} />
+
         <Button
           type="text"
           icon={<CloseOutlined style={{ color: '#fff' }} />}
@@ -589,6 +633,7 @@ const LineItemPickerModal: React.FC<{
   onClose: () => void;
   onSelect: (lineItem: LineItem, selectedNotes: string[]) => void;
 }> = ({ open, onClose, onSelect }) => {
+  const isMobile = useIsMobile();
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
   const [selectedItem, setSelectedItem] = useState<LineItem | null>(null);
@@ -657,13 +702,19 @@ const LineItemPickerModal: React.FC<{
       title="Add from Line Item Library"
       open={open}
       onCancel={onClose}
-      width={800}
+      width={isMobile ? '100%' : 800}
       footer={null}
       styles={{ body: { paddingTop: 20 } }}
     >
-      <div style={{ display: 'flex', gap: 16, minHeight: 400 }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 16, minHeight: isMobile ? 300 : 400 }}>
         {/* Left: Search and List */}
-        <div style={{ flex: 1, borderRight: `1px solid ${colors.border}`, paddingRight: 16 }}>
+        <div style={{
+          flex: 1,
+          borderRight: isMobile ? 'none' : `1px solid ${colors.border}`,
+          borderBottom: isMobile ? `1px solid ${colors.border}` : 'none',
+          paddingRight: isMobile ? 0 : 16,
+          paddingBottom: isMobile ? 16 : 0,
+        }}>
           {/* Filters */}
           <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
             <Input
@@ -672,7 +723,6 @@ const LineItemPickerModal: React.FC<{
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ flex: 1 }}
-              size="large"
               allowClear
             />
             <Select
@@ -680,7 +730,6 @@ const LineItemPickerModal: React.FC<{
               value={categoryFilter}
               onChange={setCategoryFilter}
               style={{ width: 140 }}
-              size="large"
               allowClear
               options={categories.map((cat) => ({ value: cat.name, label: cat.name }))}
             />
@@ -691,7 +740,7 @@ const LineItemPickerModal: React.FC<{
             {lineItemsData?.items && lineItemsData.items.length > 0 ? (
               <List
                 dataSource={lineItemsData.items}
-                style={{ maxHeight: 350, overflow: 'auto' }}
+                style={{ maxHeight: isMobile ? 200 : 350, overflow: 'auto' }}
                 renderItem={(item: LineItem) => (
                   <List.Item
                     key={item.id}
@@ -708,7 +757,7 @@ const LineItemPickerModal: React.FC<{
                     <div style={{ width: '100%' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontWeight: 500 }}>{item.name}</span>
-                        <span style={{ fontWeight: 600 }}>${Number(item.unitPrice || 0).toFixed(2)}</span>
+                        <span style={{ fontWeight: 600 }}>{formatCurrency(Number(item.unitPrice || 0))}</span>
                       </div>
                       {item.includes && (
                         <div style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
@@ -740,7 +789,7 @@ const LineItemPickerModal: React.FC<{
         </div>
 
         {/* Right: Selected Item Details */}
-        <div style={{ width: 320 }}>
+        <div style={{ width: isMobile ? '100%' : 320 }}>
           {selectedItem ? (
             <>
               <h4 style={{ fontFamily: fonts.heading, fontWeight: 600, marginBottom: 8 }}>
@@ -758,7 +807,7 @@ const LineItemPickerModal: React.FC<{
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
                 <span style={{ color: colors.textSecondary }}>Unit Price:</span>
-                <span style={{ fontWeight: 600 }}>${Number(selectedItem.unitPrice || 0).toFixed(2)}</span>
+                <span style={{ fontWeight: 600 }}>{formatCurrency(Number(selectedItem.unitPrice || 0))}</span>
               </div>
 
               {selectedItem.notes && selectedItem.notes.length > 0 && (
@@ -898,15 +947,16 @@ const ItemNotesModal: React.FC<{
           <span style={{ fontSize: 12, color: colors.textSecondary, order: isMobile ? 2 : 1 }}>
             Notes will appear on the invoice for this item.
           </span>
-          <Button
-            type="primary"
-            size={isMobile ? 'middle' : 'small'}
-            onClick={handleAddNote}
-            disabled={!newNote.trim()}
-            style={{ background: colors.primary, order: isMobile ? 1 : 2, flexShrink: 0 }}
-          >
-            Add Note
-          </Button>
+          {newNote.trim() && (
+            <Button
+              type="primary"
+              size={isMobile ? 'middle' : 'small'}
+              onClick={handleAddNote}
+              style={{ background: colors.primary, order: isMobile ? 1 : 2, flexShrink: 0 }}
+            >
+              Add Note
+            </Button>
+          )}
         </div>
       </div>
 
@@ -962,6 +1012,7 @@ const ItemPhotosModal: React.FC<{
   onClose: () => void;
   onSave: (images: LineItemImage[]) => void;
 }> = ({ open, item, onClose, onSave }) => {
+  const { message } = App.useApp();
   const [images, setImages] = useState<LineItemImage[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -1215,6 +1266,7 @@ const ItemPhotosModal: React.FC<{
 // Main Invoice Editor Page
 const InvoiceEditorPage: React.FC = () => {
   const { id } = useParams();
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const isEditing = Boolean(id);
   const isMobile = useIsMobile();
@@ -1271,6 +1323,30 @@ const InvoiceEditorPage: React.FC = () => {
 
   // PDF Preview state
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
+
+  // Save-to-library preference for custom items
+  const [saveToLibraryDefault, setSaveToLibraryDefault] = useState<boolean>(() => {
+    const stored = localStorage.getItem('scopeit-save-custom-to-library');
+    return stored === 'true';
+  });
+  const [hasAskedSavePreference, setHasAskedSavePreference] = useState(() => {
+    return localStorage.getItem('scopeit-save-custom-to-library') !== null;
+  });
+
+  // Payment management state
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentListModalOpen, setPaymentListModalOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
+  const [paymentForm] = Form.useForm();
+  const queryClient = useQueryClient();
+
+  const paymentMethodLabels: Record<PaymentMethod, string> = {
+    cash: 'Cash',
+    check: 'Check',
+    credit_card: 'Credit Card',
+    bank_transfer: 'Bank Transfer',
+    other: 'Other',
+  };
 
   // DnD sensors
   const sensors = useSensors(
@@ -1372,13 +1448,89 @@ const InvoiceEditorPage: React.FC = () => {
     setDueDate(invoiceDate.add(paymentTerms, 'days'));
   }, [paymentTerms, invoiceDate]);
 
-  // Calculate totals
-  const subtotal = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const taxableSubtotal = items
+  // Calculate totals (round each line item to 2 decimals to avoid floating point drift)
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const subtotal = round2(items.reduce((sum, item) => sum + round2(item.quantity * item.unitPrice), 0));
+  const taxableSubtotal = round2(items
     .filter((item) => item.isTaxable)
-    .reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
-  const taxAmount = taxableSubtotal * (taxRate / 100);
-  const total = subtotal + taxAmount;
+    .reduce((sum, item) => sum + round2(item.quantity * item.unitPrice), 0));
+  const taxAmount = round2(taxableSubtotal * (taxRate / 100));
+  const total = round2(subtotal + taxAmount);
+
+  // Payment data from server
+  const payments: Payment[] = invoiceData?.payments || [];
+  const amountPaid = Number(invoiceData?.amountPaid ?? 0);
+  const balanceDue = invoiceData?.balanceDue != null ? Number(invoiceData.balanceDue) : total;
+
+  // Payment handlers
+  const handleRecordPayment = async (values: any) => {
+    if (!id) return;
+    try {
+      const paymentData = {
+        amount: values.amount,
+        paymentMethod: values.paymentMethod,
+        paymentDate: values.paymentDate ? values.paymentDate.format('YYYY-MM-DD') : undefined,
+        referenceNumber: values.referenceNumber,
+        notes: values.notes,
+      };
+      if (editingPayment) {
+        await invoiceService.payments.update(id, editingPayment.id, paymentData);
+        message.success('Payment updated');
+      } else {
+        await invoiceService.payments.record(id, paymentData);
+        message.success('Payment recorded');
+      }
+      setPaymentModalOpen(false);
+      setEditingPayment(null);
+      paymentForm.resetFields();
+      queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+    } catch {
+      message.error(editingPayment ? 'Failed to update payment' : 'Failed to record payment');
+    }
+  };
+
+  const handleEditPayment = (payment: Payment) => {
+    setEditingPayment(payment);
+    paymentForm.setFieldsValue({
+      amount: Number(payment.amount),
+      paymentMethod: payment.paymentMethod,
+      paymentDate: payment.paymentDate ? dayjs(payment.paymentDate) : null,
+      referenceNumber: payment.referenceNumber,
+      notes: payment.notes,
+    });
+    setPaymentModalOpen(true);
+  };
+
+  const handleDeletePayment = (paymentId: string) => {
+    if (!id) return;
+    Modal.confirm({
+      title: 'Delete Payment',
+      content: 'Are you sure you want to delete this payment?',
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await invoiceService.payments.delete(id, paymentId);
+          message.success('Payment deleted');
+          queryClient.invalidateQueries({ queryKey: ['invoice', id] });
+        } catch {
+          message.error('Failed to delete payment');
+        }
+      },
+    });
+  };
+
+  const openNewPaymentModal = () => {
+    setEditingPayment(null);
+    paymentForm.setFieldsValue({
+      amount: balanceDue > 0 ? balanceDue : 0,
+      paymentMethod: 'check',
+      paymentDate: dayjs(),
+      referenceNumber: undefined,
+      notes: undefined,
+    });
+    setPaymentModalOpen(true);
+  };
 
   // Selection handlers
   const toggleSelect = useCallback((itemId: string) => {
@@ -1469,7 +1621,7 @@ const InvoiceEditorPage: React.FC = () => {
     setPickerTargetSectionId(null);
   }, [items, pickerTargetSectionId]);
 
-  const addItem = useCallback((sectionId: string) => {
+  const doAddItem = useCallback((sectionId: string, saveToLibrary: boolean) => {
     const sectionItems = items.filter((i) => i.sectionId === sectionId);
     const newItem: LineItemData = {
       id: generateId(),
@@ -1480,9 +1632,37 @@ const InvoiceEditorPage: React.FC = () => {
       unitPrice: 0,
       isTaxable: true,
       orderIndex: sectionItems.length,
+      saveToLibrary,
     };
     setItems((prev) => [...prev, newItem]);
   }, [items]);
+
+  const addItem = useCallback((sectionId: string) => {
+    if (!hasAskedSavePreference) {
+      Modal.confirm({
+        title: 'Save custom items to library?',
+        icon: null,
+        content: 'Would you like to automatically save custom line items to your library for future use? You can change this per item.',
+        okText: 'Yes, always save',
+        cancelText: 'No, don\'t save',
+        okButtonProps: { style: { background: colors.primary, borderColor: colors.primary } },
+        onOk: () => {
+          localStorage.setItem('scopeit-save-custom-to-library', 'true');
+          setSaveToLibraryDefault(true);
+          setHasAskedSavePreference(true);
+          doAddItem(sectionId, true);
+        },
+        onCancel: () => {
+          localStorage.setItem('scopeit-save-custom-to-library', 'false');
+          setSaveToLibraryDefault(false);
+          setHasAskedSavePreference(true);
+          doAddItem(sectionId, false);
+        },
+      });
+    } else {
+      doAddItem(sectionId, saveToLibraryDefault);
+    }
+  }, [hasAskedSavePreference, saveToLibraryDefault, doAddItem]);
 
   const updateItem = useCallback((itemId: string, updates: Partial<LineItemData>) => {
     setItems((prev) =>
@@ -1528,6 +1708,35 @@ const InvoiceEditorPage: React.FC = () => {
     setMoveModalOpen(false);
     message.success('Items moved');
   }, [selectedIds]);
+
+  const [savingToLibrary, setSavingToLibrary] = useState(false);
+  const saveSelectedToLibrary = useCallback(async () => {
+    const selectedItems = items.filter((i) => selectedIds.has(i.id) && i.name);
+    if (selectedItems.length === 0) {
+      message.warning('No items to save');
+      return;
+    }
+    setSavingToLibrary(true);
+    try {
+      let savedCount = 0;
+      for (const item of selectedItems) {
+        await lineItemService.create({
+          name: item.name,
+          includes: item.description || '',
+          unit: item.unit || 'EA',
+          unitPrice: item.unitPrice,
+          isTaxable: item.isTaxable,
+        });
+        savedCount++;
+      }
+      message.success(`${savedCount} item${savedCount > 1 ? 's' : ''} saved to library`);
+      setSelectedIds(new Set());
+    } catch {
+      message.error('Failed to save items to library');
+    } finally {
+      setSavingToLibrary(false);
+    }
+  }, [items, selectedIds, message]);
 
   const pasteItems = useCallback((targetSectionId: string) => {
     if (!clipboard.items.length) return;
@@ -1589,23 +1798,44 @@ const InvoiceEditorPage: React.FC = () => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
+    // Check if dragging a section
+    const isSection = active.data?.current?.type === 'section';
+    if (isSection) {
+      const oldIndex = sections.findIndex((s) => s.id === active.id);
+      const newIndex = sections.findIndex((s) => s.id === over.id);
+      if (oldIndex !== -1 && newIndex !== -1) {
+        setSections((prev) => arrayMove(prev, oldIndex, newIndex));
+      }
+      return;
+    }
+
+    // Otherwise dragging a line item
     const activeItem = items.find((i) => i.id === active.id);
     const overItem = items.find((i) => i.id === over.id);
 
     if (activeItem && overItem) {
-      // Reorder items
       const oldIndex = items.indexOf(activeItem);
       const newIndex = items.indexOf(overItem);
 
       if (activeItem.sectionId === overItem.sectionId) {
-        // Same section - just reorder
         setItems((prev) => arrayMove(prev, oldIndex, newIndex));
       } else {
-        // Different section - move to new section
         setItems((prev) =>
           prev.map((item) =>
             item.id === activeItem.id
               ? { ...item, sectionId: overItem.sectionId }
+              : item
+          )
+        );
+      }
+    } else if (activeItem && !overItem) {
+      // Dragging over an empty section (over.id is a section id, not an item id)
+      const overSection = sections.find((s) => s.id === over.id);
+      if (overSection && activeItem.sectionId !== overSection.id) {
+        setItems((prev) =>
+          prev.map((item) =>
+            item.id === activeItem.id
+              ? { ...item, sectionId: overSection.id }
               : item
           )
         );
@@ -1737,16 +1967,35 @@ const InvoiceEditorPage: React.FC = () => {
       let result: Invoice;
 
       if (isEditing) {
-        // Update existing invoice
         result = await invoiceService.update(id!, payload);
         message.success('Invoice updated successfully');
       } else {
-        // Create new invoice
         result = await invoiceService.create(payload);
         message.success('Invoice created successfully');
       }
 
-      // Navigate to invoice detail page
+      // Save custom items to library if flagged
+      const customItemsToSave = items.filter((item) => !item.lineItemId && item.saveToLibrary && item.name);
+      for (const item of customItemsToSave) {
+        try {
+          await lineItemService.create({
+            name: item.name,
+            includes: item.description,
+            unit: item.unit || 'EA',
+            unitPrice: item.unitPrice,
+            isTaxable: item.isTaxable,
+          });
+        } catch {
+          // Silent fail for individual items — don't block navigation
+        }
+      }
+      if (customItemsToSave.length > 0) {
+        // Update preference based on last state
+        const lastSaveState = customItemsToSave.length > 0;
+        localStorage.setItem('scopeit-save-custom-to-library', String(lastSaveState));
+        setSaveToLibraryDefault(lastSaveState);
+      }
+
       navigate(`/app/invoices/${result.id}`);
     } catch (error: any) {
       console.error('Failed to save invoice:', error);
@@ -1786,17 +2035,17 @@ const InvoiceEditorPage: React.FC = () => {
   }
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto', paddingBottom: isMobile ? 80 : 0 }}>
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <div style={{
           display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
+          flexDirection: 'row',
           justifyContent: 'space-between',
-          alignItems: isMobile ? 'stretch' : 'center',
-          gap: isMobile ? 16 : 12,
+          alignItems: 'center',
+          gap: 12,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', minWidth: 0 }}>
             <h1 style={{ fontFamily: fonts.heading, fontSize: isMobile ? 20 : 24, fontWeight: 700, margin: 0 }}>
               {isEditing ? 'Edit Invoice' : 'New Invoice'}
             </h1>
@@ -1805,50 +2054,37 @@ const InvoiceEditorPage: React.FC = () => {
                 color: getStatusDisplay(status, statusConfigs).color,
                 background: getStatusDisplay(status, statusConfigs).bg,
                 border: 'none',
-                fontWeight: 500
+                fontWeight: 500,
+                flexShrink: 0,
               }}>
                 {getStatusDisplay(status, statusConfigs).label}
               </Tag>
             )}
           </div>
-          <div style={{
-            display: 'flex',
-            gap: 12,
-            width: isMobile ? '100%' : 'auto',
-          }}>
-            {isEditing && (
+          {/* Action buttons: only shown in header on non-mobile */}
+          {!isMobile && (
+            <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
+              {isEditing && (
+                <Button
+                  icon={<EyeOutlined />}
+                  onClick={() => setPreviewModalOpen(true)}
+                  style={{ fontWeight: 600, borderRadius: 8 }}
+                >
+                  Preview PDF
+                </Button>
+              )}
               <Button
-                icon={<EyeOutlined />}
-                size="large"
-                onClick={() => setPreviewModalOpen(true)}
-                style={{
-                  fontWeight: 600,
-                  height: 44,
-                  borderRadius: 8,
-                  flex: isMobile ? 1 : 'none',
-                }}
+                type="primary"
+                icon={<SaveOutlined />}
+                onClick={handleSave}
+                loading={isSaving}
+                disabled={isSaving}
+                style={{ background: colors.primary, fontWeight: 600, borderRadius: 8 }}
               >
-                Preview PDF
+                {isEditing ? 'Save Changes' : 'Create Invoice'}
               </Button>
-            )}
-            <Button
-              type="primary"
-              icon={<SaveOutlined />}
-              size="large"
-              onClick={handleSave}
-              loading={isSaving}
-              disabled={isSaving}
-              style={{
-                background: colors.primary,
-                fontWeight: 600,
-                height: 44,
-                borderRadius: 8,
-                flex: isMobile ? 1 : 'none',
-              }}
-            >
-              {isEditing ? 'Save Changes' : 'Create Invoice'}
-            </Button>
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1873,14 +2109,14 @@ const InvoiceEditorPage: React.FC = () => {
                 <DatePicker
                   value={invoiceDate}
                   onChange={(d) => d && setInvoiceDate(d)}
-                  style={{ height: 40, width: '100%' }}
+                  style={{ width: '100%' }}
                 />
               </Form.Item>
               <Form.Item label="Payment Terms" style={{ marginBottom: 0, flex: isMobile ? 'none' : '1 1 auto', minWidth: isMobile ? 'auto' : 150 }}>
                 <Select
                   value={paymentTerms}
                   onChange={setPaymentTerms}
-                  style={{ width: '100%', height: 40 }}
+                  style={{ width: '100%' }}
                   options={paymentTermsOptions}
                 />
               </Form.Item>
@@ -1888,7 +2124,7 @@ const InvoiceEditorPage: React.FC = () => {
                 <DatePicker
                   value={dueDate}
                   onChange={(d) => d && setDueDate(d)}
-                  style={{ height: 40, width: '100%' }}
+                  style={{ width: '100%' }}
                 />
               </Form.Item>
             </div>
@@ -1920,12 +2156,15 @@ const InvoiceEditorPage: React.FC = () => {
                     .filter((i) => i.sectionId === section.id)
                     .sort((a, b) => a.orderIndex - b.orderIndex)}
                   selectedIds={selectedIds}
+                  clipboardCount={clipboard.items.length}
                   onToggleCollapse={() =>
                     updateSection(section.id, { isCollapsed: !section.isCollapsed })
                   }
                   onUpdateSection={(updates) => updateSection(section.id, updates)}
                   onDeleteSection={() => deleteSection(section.id)}
-                  onAddItem={() => openLineItemPicker(section.id)}
+                  onAddItem={() => addItem(section.id)}
+                  onAddFromLibrary={() => openLineItemPicker(section.id)}
+                  onPasteHere={() => { pasteItems(section.id); deselectAll(); }}
                   onToggleSelect={toggleSelect}
                   onSelectAllInSection={() => selectAllInSection(section.id)}
                   onUpdateItem={updateItem}
@@ -1947,7 +2186,7 @@ const InvoiceEditorPage: React.FC = () => {
             icon={<PlusOutlined />}
             onClick={addSection}
             block
-            style={{ height: 48, marginBottom: 16 }}
+            style={{ marginBottom: 16 }}
           >
             Add Section
           </Button>
@@ -1970,12 +2209,12 @@ const InvoiceEditorPage: React.FC = () => {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ color: colors.textSecondary }}>Subtotal</span>
-              <span>${subtotal.toFixed(2)}</span>
+              <span>{formatCurrency(subtotal)}</span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ color: colors.textSecondary }}>Taxable</span>
-              <span>${taxableSubtotal.toFixed(2)}</span>
+              <span>{formatCurrency(taxableSubtotal)}</span>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1996,7 +2235,7 @@ const InvoiceEditorPage: React.FC = () => {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <span style={{ color: colors.textSecondary }}>Tax Amount</span>
-              <span>${taxAmount.toFixed(2)}</span>
+              <span>{formatCurrency(taxAmount)}</span>
             </div>
 
             <Divider style={{ margin: '16px 0' }} />
@@ -2004,7 +2243,7 @@ const InvoiceEditorPage: React.FC = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ fontWeight: 600, fontSize: 16 }}>Total</span>
               <span style={{ fontWeight: 700, fontSize: 20, fontFamily: fonts.heading }}>
-                ${total.toFixed(2)}
+                {formatCurrency(total)}
               </span>
             </div>
 
@@ -2012,20 +2251,86 @@ const InvoiceEditorPage: React.FC = () => {
             {isEditing && (
               <>
                 <Divider style={{ margin: '16px 0' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span style={{ color: colors.textSecondary }}>Amount Paid</span>
-                  <span style={{ color: colors.success }}>$0.00</span>
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, cursor: 'pointer', padding: '4px 0', borderRadius: 4 }}
+                  onClick={() => setPaymentListModalOpen(true)}
+                >
+                  <span style={{ color: colors.textSecondary }}>
+                    Amount Paid
+                    {payments.length > 0 && (
+                      <span style={{ fontSize: 11, marginLeft: 4, color: colors.textMuted }}>
+                        ({payments.length} payment{payments.length > 1 ? 's' : ''})
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ color: colors.success, textDecoration: 'underline' }}>
+                    -{formatCurrency(amountPaid)}
+                  </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontWeight: 600 }}>Balance Due</span>
-                  <span style={{ fontWeight: 700, color: colors.error }}>
-                    ${total.toFixed(2)}
+                  <span style={{ fontWeight: 700, color: balanceDue > 0 ? colors.error : colors.success }}>
+                    {formatCurrency(balanceDue)}
                   </span>
                 </div>
+                <Button
+                  type="dashed"
+                  icon={<PlusOutlined />}
+                  onClick={openNewPaymentModal}
+                  style={{ width: '100%', marginTop: 8, height: 40 }}
+                >
+                  Record Payment
+                </Button>
               </>
             )}
           </Card>
       </div>
+
+      {/* Fixed bottom action bar — mobile only */}
+      {isMobile && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: colors.bgWhite,
+            borderTop: `1px solid ${colors.border}`,
+            padding: '12px 16px',
+            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+            display: 'flex',
+            gap: 12,
+            zIndex: 900,
+            boxShadow: '0 -4px 12px rgba(0,0,0,0.08)',
+          }}
+        >
+          {isEditing && (
+            <Button
+              icon={<EyeOutlined />}
+              onClick={() => setPreviewModalOpen(true)}
+              style={{ flex: 1, height: 44, fontWeight: 600, borderRadius: 8 }}
+            >
+              Preview
+            </Button>
+          )}
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            onClick={handleSave}
+            loading={isSaving}
+            disabled={isSaving}
+            style={{
+              background: colors.primary,
+              flex: 2,
+              height: 44,
+              fontWeight: 600,
+              borderRadius: 8,
+            }}
+          >
+            {isEditing ? 'Save Changes' : 'Create Invoice'}
+          </Button>
+        </div>
+      )}
 
       {/* Bulk Action Bar */}
       {selectedIds.size > 0 && (
@@ -2035,6 +2340,8 @@ const InvoiceEditorPage: React.FC = () => {
           onCut={cutSelected}
           onDelete={deleteSelected}
           onMove={() => setMoveModalOpen(true)}
+          onSaveToLibrary={saveSelectedToLibrary}
+          savingToLibrary={savingToLibrary}
           onDeselect={deselectAll}
           isMobile={isMobile}
         />
@@ -2123,6 +2430,122 @@ const InvoiceEditorPage: React.FC = () => {
         onManagePhotos={mobileEditItem ? () => openPhotosModal(mobileEditItem.id) : undefined}
       />
 
+      {/* Payment List Modal */}
+      <Modal
+        title="Payments"
+        open={paymentListModalOpen}
+        onCancel={() => setPaymentListModalOpen(false)}
+        footer={
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setPaymentListModalOpen(false); openNewPaymentModal(); }} style={{ background: colors.primary }}>
+            Record Payment
+          </Button>
+        }
+        width={600}
+      >
+        {payments.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 24, color: colors.textSecondary }}>
+            No payments recorded yet
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {payments.map((payment) => (
+              <div
+                key={payment.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 16px',
+                  background: '#f9fafb',
+                  borderRadius: 8,
+                  border: '1px solid #e5e7eb',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600 }}>{formatCurrency(Number(payment.amount))}</div>
+                  <div style={{ fontSize: 12, color: colors.textSecondary }}>
+                    {paymentMethodLabels[payment.paymentMethod] || payment.paymentMethod}
+                    {payment.paymentDate && ` · ${dayjs(payment.paymentDate).format('MMM D, YYYY')}`}
+                    {payment.referenceNumber && ` · ${payment.referenceNumber}`}
+                  </div>
+                </div>
+                <Space size="small">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => { setPaymentListModalOpen(false); handleEditPayment(payment); }}
+                  />
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    onClick={() => handleDeletePayment(payment.id)}
+                  />
+                </Space>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      {/* Record/Edit Payment Modal */}
+      <Modal
+        title={editingPayment ? 'Edit Payment' : 'Record Payment'}
+        open={paymentModalOpen}
+        onCancel={() => {
+          setPaymentModalOpen(false);
+          setEditingPayment(null);
+          paymentForm.resetFields();
+        }}
+        onOk={() => paymentForm.submit()}
+        okText={editingPayment ? 'Update Payment' : 'Record Payment'}
+      >
+        <Form
+          form={paymentForm}
+          layout="vertical"
+          onFinish={handleRecordPayment}
+          initialValues={{
+            paymentDate: dayjs(),
+            paymentMethod: 'check',
+          }}
+        >
+          <Form.Item
+            label="Amount"
+            name="amount"
+            rules={[
+              { required: true, message: 'Please enter amount' },
+              { type: 'number', min: 0.01, message: 'Amount must be greater than 0' },
+            ]}
+          >
+            <InputNumber style={{ width: '100%' }} prefix="$" precision={2} min={0} />
+          </Form.Item>
+          <Form.Item
+            label="Payment Method"
+            name="paymentMethod"
+            rules={[{ required: true, message: 'Please select payment method' }]}
+          >
+            <Select>
+              <Select.Option value="cash">Cash</Select.Option>
+              <Select.Option value="check">Check</Select.Option>
+              <Select.Option value="credit_card">Credit Card</Select.Option>
+              <Select.Option value="bank_transfer">Bank Transfer</Select.Option>
+              <Select.Option value="other">Other</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item label="Payment Date" name="paymentDate">
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="Reference Number" name="referenceNumber">
+            <Input placeholder="Check number, transaction ID, etc." />
+          </Form.Item>
+          <Form.Item label="Notes" name="notes">
+            <Input.TextArea rows={2} placeholder="Optional payment notes" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       {/* PDF Preview Modal */}
       {isEditing && id && (
         <PdfPreviewModal
@@ -2132,7 +2555,7 @@ const InvoiceEditorPage: React.FC = () => {
           documentId={id}
           documentNumber={invoiceData?.invoiceNumber || ''}
           customerName={invoiceData?.customerName}
-          isPaid={(invoiceData?.balanceDue ?? 0) <= 0.01}
+          isPaid={Number(invoiceData?.total ?? 0) > 0 && Number(invoiceData?.balanceDue ?? 1) <= 0.01}
           fetchPreview={invoiceService.getPreview}
           fetchPdf={invoiceService.getPdf}
           templates={pdfTemplates}

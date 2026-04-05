@@ -71,6 +71,7 @@ def serialize_line_item(line_item: LineItem) -> dict:
         "visibility": line_item.visibility.value if hasattr(line_item.visibility, 'value') else line_item.visibility,
         "company_id": str(line_item.company_id),
         "created_by": str(line_item.created_by),
+        "tool_id": line_item.tool_id,
         "is_active": line_item.is_active,
         "created_at": line_item.created_at,
         "updated_at": line_item.updated_at,
@@ -103,9 +104,11 @@ async def list_line_items(
 ):
     """List line items accessible to user"""
     # Base query - company items + user's private items
+    # Exclude tool-managed items (e.g. packing) from the general list
     query = db.query(LineItem).filter(
         LineItem.company_id == current_user.company_id,
         LineItem.is_active == is_active,
+        LineItem.tool_id.is_(None),
         or_(
             LineItem.visibility == LineItemVisibility.COMPANY,
             and_(
@@ -202,7 +205,13 @@ async def update_line_item(
     """Update line item"""
     line_item = get_line_item_or_404(line_item_id, current_user, db, require_write_access=True)
 
-    for field, value in data.model_dump(exclude_unset=True).items():
+    update_data = data.model_dump(exclude_unset=True)
+
+    # Protect code field for tool-managed items (code is the mapping key)
+    if line_item.tool_id and "code" in update_data:
+        del update_data["code"]
+
+    for field, value in update_data.items():
         if field == "visibility" and value:
             value = LineItemVisibility(value)
         setattr(line_item, field, value)
