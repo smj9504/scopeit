@@ -221,17 +221,34 @@ const InvoicesListPage: React.FC = () => {
             Loading...
           </div>
         ) : invoices.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center' }}>
-            <DollarOutlined style={{ fontSize: 40, color: colors.textMuted, marginBottom: 12 }} />
-            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>No invoices yet</div>
-            <div style={{ color: colors.textSecondary, marginBottom: 20, fontSize: 14 }}>
-              Create your first invoice or convert an approved estimate
-            </div>
+          <div style={{ textAlign: 'center', padding: '60px 24px' }}>
+            <DollarOutlined style={{ fontSize: 48, color: '#d1d5db', marginBottom: 16 }} />
+            <h3
+              style={{
+                fontFamily: fonts.heading,
+                fontSize: 18,
+                fontWeight: 600,
+                color: colors.textPrimary,
+                margin: '0 0 8px',
+              }}
+            >
+              No invoices yet
+            </h3>
+            <p
+              style={{
+                color: colors.textSecondary,
+                marginBottom: 24,
+                maxWidth: 320,
+                margin: '0 auto 24px',
+              }}
+            >
+              Convert an estimate to an invoice or create one from scratch.
+            </p>
             <Button
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => navigate('/app/invoices/new')}
-              style={{ background: colors.primary, width: '100%' }}
+              style={{ background: colors.primary, fontWeight: 600, width: '100%' }}
             >
               Create Invoice
             </Button>
@@ -312,17 +329,34 @@ const InvoicesListPage: React.FC = () => {
           })}
           locale={{
             emptyText: (
-              <div style={{ padding: 48, textAlign: 'center' }}>
-                <DollarOutlined style={{ fontSize: 48, color: colors.textMuted, marginBottom: 16 }} />
-                <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>No invoices yet</div>
-                <div style={{ color: colors.textSecondary, marginBottom: 24 }}>
-                  Create your first invoice or convert an approved estimate
-                </div>
+              <div style={{ textAlign: 'center', padding: '60px 24px' }}>
+                <DollarOutlined style={{ fontSize: 48, color: '#d1d5db', marginBottom: 16 }} />
+                <h3
+                  style={{
+                    fontFamily: fonts.heading,
+                    fontSize: 18,
+                    fontWeight: 600,
+                    color: colors.textPrimary,
+                    margin: '0 0 8px',
+                  }}
+                >
+                  No invoices yet
+                </h3>
+                <p
+                  style={{
+                    color: colors.textSecondary,
+                    marginBottom: 24,
+                    maxWidth: 320,
+                    margin: '0 auto 24px',
+                  }}
+                >
+                  Convert an estimate to an invoice or create one from scratch.
+                </p>
                 <Button
                   type="primary"
                   icon={<PlusOutlined />}
                   onClick={() => navigate('/app/invoices/new')}
-                  style={{ background: colors.primary }}
+                  style={{ background: colors.primary, fontWeight: 600 }}
                 >
                   Create Invoice
                 </Button>

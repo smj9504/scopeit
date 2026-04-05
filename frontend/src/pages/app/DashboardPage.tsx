@@ -1,9 +1,10 @@
 /**
  * ScopeIt - Dashboard Page
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Row, Col, Card, Button, Empty, Spin } from 'antd';
+import OnboardingWizard from '@/components/common/OnboardingWizard';
 import {
   FileTextOutlined,
   DollarOutlined,
@@ -23,6 +24,9 @@ const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const isMobile = useIsMobile();
+  const [showOnboarding, setShowOnboarding] = useState(() =>
+    user ? !localStorage.getItem(`onboarding_${user.id}`) : false
+  );
 
   // Fetch dashboard data
   const { data: dashboardData, isLoading, error } = useQuery<DashboardData>({
@@ -171,6 +175,11 @@ const DashboardPage: React.FC = () => {
       initial="hidden"
       animate="visible"
     >
+      <OnboardingWizard
+        userId={user?.id || ''}
+        open={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+      />
       {/* Header */}
       <motion.div variants={itemVariants} style={{ marginBottom: isMobile ? 20 : 32 }}>
         <h1

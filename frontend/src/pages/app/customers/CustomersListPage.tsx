@@ -12,6 +12,7 @@ import {
   PhoneOutlined,
   ExclamationCircleOutlined,
   EnvironmentOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -236,17 +237,34 @@ const CustomersListPage: React.FC = () => {
             Loading...
           </div>
         ) : customers.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center' }}>
-            <UserOutlined style={{ fontSize: 40, color: colors.textMuted, marginBottom: 12 }} />
-            <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 8 }}>No customers yet</div>
-            <div style={{ color: colors.textSecondary, marginBottom: 20, fontSize: 14 }}>
-              Add your first customer to get started
-            </div>
+          <div style={{ textAlign: 'center', padding: '60px 24px' }}>
+            <TeamOutlined style={{ fontSize: 48, color: '#d1d5db', marginBottom: 16 }} />
+            <h3
+              style={{
+                fontFamily: fonts.heading,
+                fontSize: 18,
+                fontWeight: 600,
+                color: colors.textPrimary,
+                margin: '0 0 8px',
+              }}
+            >
+              No customers yet
+            </h3>
+            <p
+              style={{
+                color: colors.textSecondary,
+                marginBottom: 24,
+                maxWidth: 320,
+                margin: '0 auto 24px',
+              }}
+            >
+              Add your first customer to attach them to estimates and invoices.
+            </p>
             <Button
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => handleOpenModal()}
-              style={{ background: colors.primary, width: '100%' }}
+              style={{ background: colors.primary, fontWeight: 600, width: '100%' }}
             >
               Add Customer
             </Button>
@@ -321,13 +339,35 @@ const CustomersListPage: React.FC = () => {
             })}
             locale={{
               emptyText: (
-                <div style={{ padding: 48, textAlign: 'center' }}>
-                  <UserOutlined style={{ fontSize: 48, color: colors.textMuted, marginBottom: 16 }} />
-                  <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>No customers yet</div>
-                  <div style={{ color: colors.textSecondary, marginBottom: 24 }}>
-                    Add your first customer to get started
-                  </div>
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => handleOpenModal()}>
+                <div style={{ textAlign: 'center', padding: '60px 24px' }}>
+                  <UserOutlined style={{ fontSize: 48, color: '#d1d5db', marginBottom: 16 }} />
+                  <h3
+                    style={{
+                      fontFamily: fonts.heading,
+                      fontSize: 18,
+                      fontWeight: 600,
+                      color: colors.textPrimary,
+                      margin: '0 0 8px',
+                    }}
+                  >
+                    No customers yet
+                  </h3>
+                  <p
+                    style={{
+                      color: colors.textSecondary,
+                      marginBottom: 24,
+                      maxWidth: 320,
+                      margin: '0 auto 24px',
+                    }}
+                  >
+                    Add your first customer to attach them to estimates and invoices.
+                  </p>
+                  <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={() => handleOpenModal()}
+                    style={{ background: colors.primary, fontWeight: 600 }}
+                  >
                     Add Customer
                   </Button>
                 </div>

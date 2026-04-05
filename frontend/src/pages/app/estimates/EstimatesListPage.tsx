@@ -244,21 +244,36 @@ const EstimatesListPage: React.FC = () => {
             Loading...
           </div>
         ) : estimates.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center' }}>
-            <FileTextOutlined style={{ fontSize: 40, color: colors.textMuted, marginBottom: 12 }} />
-            <div style={{ fontSize: 15, fontWeight: 500, color: colors.textPrimary, marginBottom: 8 }}>
+          <div style={{ textAlign: 'center', padding: '60px 24px' }}>
+            <FileTextOutlined style={{ fontSize: 48, color: '#d1d5db', marginBottom: 16 }} />
+            <h3
+              style={{
+                fontFamily: fonts.heading,
+                fontSize: 18,
+                fontWeight: 600,
+                color: colors.textPrimary,
+                margin: '0 0 8px',
+              }}
+            >
               No estimates yet
-            </div>
-            <div style={{ color: colors.textSecondary, marginBottom: 20, fontSize: 14 }}>
-              Create your first estimate to get started
-            </div>
+            </h3>
+            <p
+              style={{
+                color: colors.textSecondary,
+                marginBottom: 24,
+                maxWidth: 320,
+                margin: '0 auto 24px',
+              }}
+            >
+              Create your first estimate to get started. Add line items, set prices, and send to customers.
+            </p>
             <Button
               type="primary"
               icon={<PlusOutlined />}
               onClick={() => navigate('/app/estimates/new')}
-              style={{ background: colors.primary, width: '100%' }}
+              style={{ background: colors.primary, fontWeight: 600, width: '100%' }}
             >
-              Create Estimate
+              Create Your First Estimate
             </Button>
           </div>
         ) : (
@@ -327,30 +342,36 @@ const EstimatesListPage: React.FC = () => {
           }}
           locale={{
             emptyText: (
-              <div style={{ padding: 48, textAlign: 'center' }}>
-                <FileTextOutlined
-                  style={{ fontSize: 48, color: colors.textMuted, marginBottom: 16 }}
-                />
-                <div
+              <div style={{ textAlign: 'center', padding: '60px 24px' }}>
+                <FileTextOutlined style={{ fontSize: 48, color: '#d1d5db', marginBottom: 16 }} />
+                <h3
                   style={{
-                    fontSize: 16,
-                    fontWeight: 500,
+                    fontFamily: fonts.heading,
+                    fontSize: 18,
+                    fontWeight: 600,
                     color: colors.textPrimary,
-                    marginBottom: 8,
+                    margin: '0 0 8px',
                   }}
                 >
                   No estimates yet
-                </div>
-                <div style={{ color: colors.textSecondary, marginBottom: 24 }}>
-                  Create your first estimate to get started
-                </div>
+                </h3>
+                <p
+                  style={{
+                    color: colors.textSecondary,
+                    marginBottom: 24,
+                    maxWidth: 320,
+                    margin: '0 auto 24px',
+                  }}
+                >
+                  Create your first estimate to get started. Add line items, set prices, and send to customers.
+                </p>
                 <Button
                   type="primary"
                   icon={<PlusOutlined />}
                   onClick={() => navigate('/app/estimates/new')}
-                  style={{ background: colors.primary }}
+                  style={{ background: colors.primary, fontWeight: 600 }}
                 >
-                  Create Estimate
+                  Create Your First Estimate
                 </Button>
               </div>
             ),

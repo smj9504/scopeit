@@ -437,10 +437,10 @@ const AppLayout: React.FC = () => {
               padding: isMobile ? 16 : 24,
               minHeight: 'calc(100vh - 64px)',
               background: colors.bgLight,
-              // Prevent horizontal overflow on mobile/tablet
               overflowX: 'hidden',
-              // Safe area for bottom notch and right side (landscape)
-              paddingBottom: useDrawer
+              paddingBottom: isMobile
+                ? 'calc(56px + 16px + env(safe-area-inset-bottom))'
+                : useDrawer
                 ? 'calc(16px + env(safe-area-inset-bottom))'
                 : 24,
               paddingRight: useDrawer
@@ -452,6 +452,70 @@ const AppLayout: React.FC = () => {
           </Content>
         </Layout>
       </HeaderNavProvider>
+
+      {/* Mobile Bottom Navigation */}
+      {isMobile && (
+        <nav
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 56,
+            background: colors.bgWhite,
+            borderTop: `1px solid ${colors.border}`,
+            display: 'flex',
+            alignItems: 'stretch',
+            zIndex: 100,
+            paddingBottom: 'env(safe-area-inset-bottom)',
+          }}
+        >
+          {[
+            { key: '/app/dashboard', icon: <HomeOutlined />, label: 'Dashboard' },
+            { key: '/app/estimates', icon: <FileTextOutlined />, label: 'Estimates' },
+            { key: '/app/invoices', icon: <DollarOutlined />, label: 'Invoices' },
+            { key: '/app/customers', icon: <UserOutlined />, label: 'Customers' },
+            { key: '/app/tools', icon: <AppstoreOutlined />, label: 'Tools' },
+          ].map((tab) => {
+            const isActive = location.pathname.startsWith(tab.key);
+            return (
+              <button
+                key={tab.key}
+                onClick={() => navigate(tab.key)}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 3,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '6px 0',
+                  color: isActive ? colors.primary : '#9ca3af',
+                  fontSize: isActive ? 20 : 18,
+                  fontWeight: isActive ? 700 : 400,
+                  transition: 'color 0.15s ease',
+                }}
+                aria-label={tab.label}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                {tab.icon}
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: isActive ? 600 : 400,
+                    lineHeight: 1,
+                  }}
+                >
+                  {tab.label}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+      )}
     </Layout>
   );
 };
