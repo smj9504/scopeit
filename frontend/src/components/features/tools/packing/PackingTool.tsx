@@ -89,6 +89,8 @@ const PackingTool: React.FC<ToolComponentProps> = ({ sessionId, onCreateEstimate
 
   // Estimate result + editor modal
   const [result, setResult] = useState<EstimateResponse | null>(null);
+  const resultRef = useRef(result);
+  resultRef.current = result;
   const [editorOpen, setEditorOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [estimateMode, setEstimateMode] = useState<PackingMode>('quick');
@@ -128,15 +130,17 @@ const PackingTool: React.FC<ToolComponentProps> = ({ sessionId, onCreateEstimate
   const saveSession = useCallback(async (mode: PackingMode, resultData?: EstimateResponse) => {
     if (!activeSessionId && createFailedRef.current) return;
 
+    // Use ref to always get the latest result state (avoids stale closure)
+    const currentResult = resultData ?? resultRef.current;
     const sessionData = {
       mode,
-      status: (resultData ?? result) ? 'completed' : 'draft',
+      status: currentResult ? 'completed' : 'draft',
       rooms,
       photo_rooms: photoRooms,
       settings,
       client_info: clientInfo,
       company_override: companyOverride,
-      result: resultData ?? result ?? undefined,
+      result: currentResult ?? undefined,
     };
     try {
       if (activeSessionId) {
@@ -156,7 +160,7 @@ const PackingTool: React.FC<ToolComponentProps> = ({ sessionId, onCreateEstimate
         createFailedRef.current = true;
       }
     }
-  }, [rooms, photoRooms, settings, clientInfo, companyOverride, result, activeSessionId]);
+  }, [rooms, photoRooms, settings, clientInfo, companyOverride, activeSessionId]);
 
   // ── Auto-save debounce ─────────────────────────────────────────────────
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -219,9 +223,16 @@ const PackingTool: React.FC<ToolComponentProps> = ({ sessionId, onCreateEstimate
   };
 
   // ── Load session from list ─────────────────────────────────────────────
-  const handleLoadEstimate = useCallback((session: any) => {
+  const handleLoadEstimate = useCallback(async (session: any) => {
     resetState();
-    const d = session.data;
+    // Fetch full session data (list endpoint strips heavy photo data for performance)
+    let d = session.data;
+    try {
+      const fullSession = await toolService.getSession(session.id);
+      d = fullSession.data as any;
+    } catch {
+      // Fall back to list data if fetch fails
+    }
     if (d?.rooms) setRooms(d.rooms);
     if (d?.photo_rooms) setPhotoRooms(d.photo_rooms);
     if (d?.settings) setSettings(d.settings);

@@ -34,6 +34,14 @@ FLOOR_MULTIPLIERS = {
     "4th+": 1.40,     # 3+ stair flights — eastern US brownstones/walkups
 }
 
+# Base box materials per room — covers miscellaneous contents not captured
+# by AI item detection (drawer contents, shelf items, small decor, toiletries).
+BASE_ROOM_MATERIALS = {
+    "small":  {"box_small": 1},
+    "large":  {"box_small": 1, "box_medium": 2, "box_large": 1},
+    "xlarge": {"box_small": 2, "box_medium": 2, "box_large": 1},
+}
+
 # Regional labor cost multipliers (applied to labor sections only, not materials/storage)
 REGION_MULTIPLIERS = {
     "mid_atlantic": 1.00,  # Baseline — Northern Virginia / DC metro (price calibration origin)
@@ -279,45 +287,65 @@ UNIT_HINT_MATERIAL_MAP = {
 }
 
 HINT_MATERIAL_MAP = {
-    # Clothing & Textiles
-    "clothing_hanging":  {"box_wardrobe": 0.05},                                                          # industry: 4-5 wardrobe boxes per 100 hanging items
-    "clothing_folded":   {"box_medium": 0.04},
-    "bedding":           {"box_large": 0.04, "box_xlarge": 0.02},                                         # bulky but light
-    # Books & Media
-    "books":             {"box_book": 0.06, "box_small": 0.02},
-    "documents":         {"box_small": 0.05, "box_medium": 0.02},
-    # Electronics
-    "electronics":       {"box_tv": 0.02, "box_medium": 0.03, "bubble_12": 0.01},
-    # Kitchen
-    "kitchenware":       {"box_dish": 0.04, "box_medium": 0.03, "packing_paper": 0.008},
+    # ── Clothing & Textiles ──────────────────────────────────────────────
+    # Factors are per vol_scale unit. Large room scale=80, xlarge=120.
+    # Target: bedroom → 2 wardrobe boxes, 2-3 medium boxes for clothes.
+    "clothing_hanging":  {"box_wardrobe": 0.025},                         # 80×0.025=2 wardrobe boxes
+    "clothing_folded":   {"box_medium": 0.03},                            # 80×0.03=2.4 → 3 medium boxes
+    "bedding":           {"box_large": 0.025, "box_xlarge": 0.012},       # 80×0.025=2 large + 1 xlarge
+
+    # ── Books & Media ────────────────────────────────────────────────────
+    # Target: office → 4 book boxes, 1-2 small boxes
+    "books":             {"box_book": 0.05, "box_small": 0.015},          # 80×0.05=4 book + 1-2 small
+    "documents":         {"box_small": 0.03, "box_medium": 0.012},        # 80×0.03=2-3 small + 1 med
+
+    # ── Electronics ──────────────────────────────────────────────────────
+    # Most rooms have 1 TV at most; other electronics use medium boxes
+    # Target: 0-1 TV box, 2 medium boxes, 1 bubble roll per room
+    "electronics":       {"box_tv": 0.006, "box_medium": 0.025, "bubble_12": 0.008},
+
+    # ── Kitchen ──────────────────────────────────────────────────────────
+    # Target: 3-4 dish boxes, 2-3 medium, 1-2 bundles packing paper
+    "kitchenware":       {"box_dish": 0.04, "box_medium": 0.025, "packing_paper": 0.006},
     # Fragile & Valuables
-    "fragile":           {"box_dish": 0.05, "packing_paper": 0.01, "bubble_12": 0.005},
-    "artwork":           {"box_mirror": 0.03, "corner_protector": 0.005, "bubble_24": 0.003},
-    "collectibles":      {"box_small": 0.06, "bubble_12": 0.008, "packing_paper": 0.005},
-    "valuables":         {"box_small": 0.02, "bubble_24": 0.01, "packing_paper": 0.01},                  # jewelry/watches: small box + heavy wrap
-    "wine_collection":   {"box_small": 0.08, "bubble_12": 0.02, "packing_paper": 0.02},                  # ~8 wine shipper boxes per 100 bottles
-    # Furniture
-    "furniture":         {"blanket": 0.15, "shrink_wrap": 0.02, "furniture_pad": 0.05, "chair_cover": 0.04, "sofa_cover": 0.02},
-    "rugs":              {"shrink_wrap": 0.02, "blanket": 0.01},                                          # roll + plastic wrap, no boxes
-    "lamps_lighting":    {"box_lamp": 0.04, "box_medium": 0.02, "bubble_12": 0.01},
-    # Appliances
-    "appliances_small":  {"box_medium": 0.05, "bubble_12": 0.005},
-    "appliances_large":  {"blanket": 0.3, "shrink_wrap": 0.05},
-    # Recreation
-    "toys":              {"box_large": 0.04, "box_medium": 0.03},
-    "sports":            {"box_xlarge": 0.03, "blanket": 0.04},
-    "bicycles":          {"blanket": 0.02, "shrink_wrap": 0.01},                                          # 1-2 blankets per bike; rarely 100 bikes in a room
-    # Tools & Equipment
-    "tools":             {"box_small": 0.04, "blanket": 0.05},
-    "equipment_heavy":   {"blanket": 0.25, "shrink_wrap": 0.03},
-    # Storage
-    "boxes_stored":      {"shrink_wrap": 0.01},
-    "holiday_decor":     {"box_medium": 0.04, "box_large": 0.02, "packing_paper": 0.01, "bubble_12": 0.01},
-    # Music & Arts
-    "instruments":       {"blanket": 0.2, "bubble_24": 0.02},
-    # Specialty
-    "baby_items":        {"box_medium": 0.04, "box_large": 0.02, "blanket": 0.01},
-    "outdoor_furniture": {"blanket": 0.06, "shrink_wrap": 0.02, "furniture_pad": 0.02},
+    "fragile":           {"box_dish": 0.04, "packing_paper": 0.008, "bubble_12": 0.004},
+    "artwork":           {"box_mirror": 0.018, "corner_protector": 0.004, "bubble_24": 0.003},
+    "collectibles":      {"box_small": 0.04, "bubble_12": 0.006, "packing_paper": 0.004},
+    "valuables":         {"box_small": 0.015, "bubble_24": 0.008, "packing_paper": 0.006},
+    "wine_collection":   {"box_small": 0.06, "bubble_12": 0.015, "packing_paper": 0.015},
+
+    # ── Furniture ────────────────────────────────────────────────────────
+    # Typical bedroom: bed frame(2 blankets) + dresser(1) + nightstands(0) = 2-3 blankets, 1 pad
+    # Typical living: sofa(2) + coffee table(1) + TV stand(1) = 3-4 blankets, 1 pad
+    # Target large(80): blanket=2-3, pad=1, chair_cover=0, sofa_cover=0, shrink=1
+    # sofa/chair covers only meaningful at scale ≥120 (living rooms with multiple seating)
+    "furniture":         {"blanket": 0.035, "shrink_wrap": 0.01, "furniture_pad": 0.012, "chair_cover": 0.004, "sofa_cover": 0.003},
+    "rugs":              {"shrink_wrap": 0.012, "blanket": 0.008},
+    "lamps_lighting":    {"box_lamp": 0.025, "box_medium": 0.012, "bubble_12": 0.008},
+
+    # ── Appliances ───────────────────────────────────────────────────────
+    "appliances_small":  {"box_medium": 0.03, "bubble_12": 0.004},
+    "appliances_large":  {"blanket": 0.08, "shrink_wrap": 0.025},         # 80×0.08=6.4 → only for heavy appliance rooms
+
+    # ── Recreation ───────────────────────────────────────────────────────
+    "toys":              {"box_large": 0.03, "box_medium": 0.02},         # 80×0.03=2-3 large + 2 med
+    "sports":            {"box_xlarge": 0.02, "blanket": 0.025},
+    "bicycles":          {"blanket": 0.015, "shrink_wrap": 0.008},
+
+    # ── Tools & Equipment ────────────────────────────────────────────────
+    "tools":             {"box_small": 0.03, "blanket": 0.025},
+    "equipment_heavy":   {"blanket": 0.08, "shrink_wrap": 0.02},
+
+    # ── Storage ──────────────────────────────────────────────────────────
+    "boxes_stored":      {"shrink_wrap": 0.008},
+    "holiday_decor":     {"box_medium": 0.025, "box_large": 0.012, "packing_paper": 0.006, "bubble_12": 0.006},
+
+    # ── Music & Arts ─────────────────────────────────────────────────────
+    "instruments":       {"blanket": 0.06, "bubble_24": 0.012},
+
+    # ── Specialty ────────────────────────────────────────────────────────
+    "baby_items":        {"box_medium": 0.03, "box_large": 0.015, "blanket": 0.008},
+    "outdoor_furniture": {"blanket": 0.04, "shrink_wrap": 0.012, "furniture_pad": 0.012},
     "plants":            {},  # not packable — excluded from insurance contents claims
     "chemicals":         {},  # hazmat — disposal only per OSHA/EPA; not transported
 }
@@ -718,20 +746,26 @@ class EstimateCalculator:
                 for mat_key, factor in hint_materials.items():
                     mat_floats[mat_key] = mat_floats.get(mat_key, 0.0) + vol_scale * factor
 
-        # Convert accumulated floats to integers (ceil once per material, not per room)
+        # Convert accumulated floats to integers (ceil once per material, not per room).
+        # Skip materials below threshold — avoids inflating near-zero fractions to 1
+        # (e.g. sofa_cover in a bedroom where there is no sofa).
+        # Threshold 0.25 balances filtering noise vs including legitimate materials
+        # for small rooms or single-room estimates.
         materials: Dict[str, int] = dict(mattresses)
         for mat_key, raw in mat_floats.items():
             if mat_key == "packing_paper":
                 continue  # handled separately below (bundle conversion)
-            materials[mat_key] = materials.get(mat_key, 0) + max(1, math.ceil(raw))
+            if raw < 0.25:
+                continue  # too small to warrant inclusion
+            materials[mat_key] = materials.get(mat_key, 0) + math.ceil(raw)
 
         # Convert accumulated packing paper to bundles (50-lb bundle ≈ ~150 items worth)
         packing_paper_raw = mat_floats.get("packing_paper", 0.0)
+        num_rooms = len(rooms)
         if packing_paper_raw > 0:
             materials["packing_paper"] = max(1, math.ceil(packing_paper_raw))
-        else:
-            # Packing paper is always needed; default 1 bundle per 3 rooms
-            num_rooms = len(rooms)
+        elif materials and num_rooms > 0:
+            # Other materials found — add a small default for void-fill / misc wrapping.
             materials["packing_paper"] = max(1, math.ceil(num_rooms / 3))
 
         return materials
@@ -1221,7 +1255,7 @@ class EstimateCalculator:
         is_large = any(kw in name_lower for kw in self._LARGE_FURNITURE_KEYWORDS)
         if not is_large:
             return
-        # Ensure at least 2 blankets for large furniture
+        # Ensure at least 2 blankets per unit for large furniture.
         current_blankets = mat_counts.get("blanket", 0)
         needed = self._LARGE_FURNITURE_MIN_BLANKETS * item.quantity
         if current_blankets < needed:
@@ -1285,6 +1319,24 @@ class EstimateCalculator:
         note = "  ·  ".join(parts)
         return person_hours, note
 
+    # Category-based material defaults for items lacking required_materials.
+    # Keys match _normalize_material_key aliases (same format as AI output).
+    # These represent what a single unit of each category typically needs.
+    # Repeated keys indicate multiple units of that material per item.
+    _CATEGORY_DEFAULT_MATS: Dict[str, List[str]] = {
+        "Furniture":    ["moving_blanket", "moving_blanket", "stretch_wrap"],
+        "Electronics":  ["bubble_wrap_12", "medium_box"],
+        "Kitchenware":  ["packing_paper", "dish_pack_box"],
+        "Fragile":      ["packing_paper", "bubble_wrap_12", "dish_pack_box"],
+        "Books":        ["small_box"],
+        "Artwork":      ["bubble_wrap_24", "mirror_box"],
+        "Collectibles": ["bubble_wrap_12", "small_box"],
+        "Clothing":     ["medium_box"],
+        "Appliances":   ["moving_blanket", "stretch_wrap"],
+        "Tools":        ["small_box"],
+        "Sports":       ["large_box", "moving_blanket"],
+    }
+
     def aggregate_item_materials(self, rooms: List[Any]) -> Dict[str, int]:
         """Aggregate required_materials from all items across all rooms.
 
@@ -1305,6 +1357,10 @@ class EstimateCalculator:
                     item_mats = item.required_materials
                 elif hasattr(item, 'packing_method') and item.packing_method:
                     item_mats = self._infer_materials_from_packing_method(item.packing_method)
+                else:
+                    # No AI-provided materials: fall back to category defaults
+                    cat = getattr(item, 'category', None) or 'Other'
+                    item_mats = self._CATEGORY_DEFAULT_MATS.get(cat, [])
 
                 # Track per-item material counts before merging into global dict
                 # so _supplement_furniture_materials can reason about this item's share.
@@ -1328,10 +1384,10 @@ class EstimateCalculator:
                         # Accumulate raw item count; convert to bundles after loop.
                         packing_paper_raw += item.quantity
                     elif norm in self.WRAP_MATERIALS:
-                        # Wrap materials: each occurrence = 1 unit per item.
-                        # AI uses duplicate keys to represent quantity
-                        # (e.g., 2× "moving_blanket" = 2 blankets per unit).
-                        # Multiply occurrence count by item.quantity (number of units).
+                        # Wrap materials: each occurrence = 1 unit per item (per-unit encoding).
+                        # AI lists how many of this material a SINGLE unit needs via repetition
+                        # (e.g., ["moving_blanket","moving_blanket"] = 2 blankets PER sofa).
+                        # Multiply by item.quantity to get total across all units.
                         item_mat_counts[norm] = item_mat_counts.get(norm, 0) + item.quantity
                     elif norm in self.ITEMS_PER_BOX:
                         # Boxes: ceil(effective_qty / items_per_box) per occurrence.
@@ -1354,14 +1410,38 @@ class EstimateCalculator:
                 for norm, cnt in item_mat_counts.items():
                     materials[norm] = materials.get(norm, 0) + cnt
 
+        # Ensure base box materials per room.
+        # AI assigns wrapping materials (blankets, covers) to specific items but
+        # often omits boxes for miscellaneous contents (drawer items, shelf items,
+        # toiletries, decor).  Add per-room base boxes so every room contributes
+        # a realistic minimum of general-purpose packing boxes.
+        for room in rooms:
+            room_size = self._get_room_size(room)
+            base_mats = BASE_ROOM_MATERIALS.get(room_size, BASE_ROOM_MATERIALS["large"])
+            density_mult = DENSITY_MULTIPLIERS.get(
+                getattr(room, 'density', 'normal'), 1.0
+            )
+            for mat_key, base_qty in base_mats.items():
+                materials[mat_key] = materials.get(mat_key, 0) + max(1, round(base_qty * density_mult))
+
+        # Count total boxes for paper and tape calculation
+        box_keys = {k for k in materials if k.startswith("box_")}
+        total_boxes = sum(materials.get(k, 0) for k in box_keys)
+        num_rooms = len(rooms)
+
         # Convert accumulated packing paper items to 50-lb bundles.
         # A 50-lb bundle ≈ 500 sheets; each fragile item uses ~2–3 sheets → ~150 items/bundle.
-        if packing_paper_raw > 0:
-            materials["packing_paper"] = max(1, math.ceil(packing_paper_raw / 150))
-        else:
-            # Packing paper is always needed; default 1 bundle per 3 rooms
-            num_rooms = len(rooms)
-            materials["packing_paper"] = max(1, math.ceil(num_rooms / 3))
+        paper_from_items = packing_paper_raw / 150.0
+        paper_from_boxes = total_boxes / 15.0
+        paper_from_rooms = num_rooms / 3.0
+        materials["packing_paper"] = max(1, math.ceil(
+            max(paper_from_items, paper_from_boxes, paper_from_rooms)
+        ))
+
+        # Packing tape: 1 roll per ~10 boxes
+        materials["packing_tape"] = max(
+            1, math.ceil(total_boxes / 10.0)
+        )
 
         return materials
 
@@ -1522,7 +1602,7 @@ class EstimateCalculator:
                 fragile_lines += 1
 
         flags = {}
-        threshold = max(2, total_lines * 0.30)
+        threshold = max(1, total_lines * 0.30)
 
         if fragile_lines >= threshold or cats.get("Kitchenware", 0) + cats.get("Fragile", 0) >= threshold:
             flags["fragile_heavy"] = True
@@ -1598,9 +1678,12 @@ class EstimateCalculator:
 
             # Split into labor tiers based on content flags
             if content_flags.get("fragile_heavy"):
-                # ~30% of this room's time is fragile-rate work
-                fragile_mins += room_mins * 0.30
-                standard_mins += room_mins * 0.70
+                # A fragile-heavy room: all packing time is fragile-rate work
+                fragile_mins += room_mins
+            elif content_flags.get("electronics_heavy"):
+                # Electronics require careful handling → specialty rate
+                specialty_mins += room_mins * 0.50
+                standard_mins += room_mins * 0.50
             elif content_flags.get("furniture_heavy"):
                 furniture_disassembly_mins += room_mins * 0.25
                 standard_mins += room_mins * 0.75
@@ -1629,11 +1712,11 @@ class EstimateCalculator:
     @staticmethod
     def recommend_crew_size(num_rooms: int, total_hours: float) -> int:
         """Recommend crew size based on room count and estimated labor hours."""
-        if num_rooms <= 2 and total_hours < 5:
+        if num_rooms <= 2:
             return 2
-        if num_rooms <= 4 and total_hours < 12:
+        if num_rooms <= 4:
             return 3
-        if num_rooms <= 7 and total_hours < 20:
+        if num_rooms <= 7:
             return 4
         if num_rooms <= 10:
             return 5

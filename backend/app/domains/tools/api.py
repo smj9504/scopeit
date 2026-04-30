@@ -106,17 +106,25 @@ async def list_sessions(
     tool_id: Optional[str] = None,
     skip: int = 0,
     limit: int = 20,
+    summary: bool = True,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List tool sessions for the current company."""
+    """List tool sessions for the current company.
+
+    When summary=True (default), strips heavy binary data (base64 photos)
+    from session data to keep the response lightweight.
+    """
     service = ToolSessionService(db)
-    return service.get_sessions(
+    sessions = service.get_sessions(
         company_id=current_user.company_id,
         tool_id=tool_id,
         skip=skip,
         limit=limit,
     )
+    if summary:
+        sessions = service.strip_heavy_data(sessions)
+    return sessions
 
 
 @router.post("/sessions", response_model=ToolSessionResponse, status_code=201)

@@ -74,6 +74,27 @@ class ToolSessionService:
             query = query.filter(ToolSession.tool_id == tool_id)
         return query.order_by(ToolSession.created_at.desc()).offset(skip).limit(limit).all()
 
+    def strip_heavy_data(self, sessions: List[ToolSession]) -> List[ToolSession]:
+        """Strip base64 photos and other heavy blobs from session data for list views.
+
+        Mutates session.data in-place (detached from DB after query) to remove
+        photo_rooms[].photos arrays and any other large binary fields, keeping
+        the response lightweight for listing endpoints.
+        """
+        for session in sessions:
+            data = session.data
+            if not data or not isinstance(data, dict):
+                continue
+            # Strip photo_rooms photos (each photo is ~200KB-1MB base64)
+            photo_rooms = data.get("photo_rooms")
+            if photo_rooms and isinstance(photo_rooms, list):
+                for room in photo_rooms:
+                    if isinstance(room, dict) and "photos" in room:
+                        # Keep count for UI display but drop the actual data
+                        room["photo_count"] = len(room["photos"]) if isinstance(room["photos"], list) else 0
+                        room["photos"] = []
+        return sessions
+
     def get_session(self, session_id: UUID, company_id: UUID) -> ToolSession:
         session = (
             self.db.query(ToolSession)
