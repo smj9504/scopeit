@@ -7,6 +7,7 @@ import {
   Card,
   Select,
   Input,
+  AutoComplete,
   Spin,
   Empty,
   Typography,
@@ -14,12 +15,13 @@ import {
   Button,
   App,
 } from 'antd';
-import { SearchOutlined, SaveOutlined, PlusOutlined, ArrowLeftOutlined } from '@ant-design/icons';
+import { SearchOutlined, SaveOutlined, PlusOutlined, ArrowLeftOutlined, EnvironmentOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerService } from '@/services/customerService';
 import type { Customer, CustomerCreate } from '@/types/entities';
 import { colors, fonts, borderRadius } from '@/styles/theme';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { packingApi } from '@/components/features/tools/packing/packingApi';
 
 // Simple debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -84,16 +86,55 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
     address: value?.address || '',
   });
 
+  // Address autocomplete
+  const [addressOptions, setAddressOptions] = useState<{ value: string; label: React.ReactNode }[]>([]);
+  const addressTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const handleAddressSearch = useCallback((text: string) => {
+    handleDirectInputChange('address', text);
+    clearTimeout(addressTimerRef.current);
+    if (text.trim().length < 3) {
+      setAddressOptions([]);
+      return;
+    }
+    addressTimerRef.current = setTimeout(() => {
+      packingApi.addressAutocomplete(text).then((results) => {
+        setAddressOptions(
+          results.map((r) => ({
+            value: r.address,
+            label: (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                <EnvironmentOutlined style={{ color: '#999', flexShrink: 0 }} />
+                <span>{r.address}</span>
+              </div>
+            ),
+          })),
+        );
+      }).catch(() => setAddressOptions([]));
+    }, 300);
+  }, []);
+
+  const handleAddressSelect = useCallback((address: string) => {
+    handleDirectInputChange('address', address);
+    setAddressOptions([]);
+  }, []);
+
   // Sync internal state when value prop changes (e.g., when loading existing estimate)
   // Use a ref to avoid re-syncing values we just pushed up via onChange
   const lastPushedRef = useRef<string>('');
 
   useEffect(() => {
     if (!value) return;
-    const fingerprint = `${value.customerId}|${value.name}|${value.email}|${value.phone}|${value.address}`;
+    // Normalize undefined and '' to the same value so fingerprints match
+    const norm = (v: string | undefined) => v || '';
+    const fingerprint = `${norm(value.customerId)}|${norm(value.name)}|${norm(value.email)}|${norm(value.phone)}|${norm(value.address)}`;
     if (fingerprint === lastPushedRef.current) return; // skip — we caused this change
     setSelectedCustomerId(value.customerId);
-    setIsManualEntry(!value.customerId && !!value.name);
+    // Only switch away from manual mode if this is an external change (e.g. loading a saved session),
+    // not when the parent echoes back our own edits with slightly different values.
+    if (!isManualEntry) {
+      setIsManualEntry(!value.customerId && !!value.name);
+    }
     setDirectInput({
       name: value.name || '',
       email: value.email || '',
@@ -159,6 +200,12 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
     },
   });
 
+  // Normalize undefined and '' for consistent fingerprint comparison
+  const pushFingerprint = (data: CustomerData) => {
+    const norm = (v: string | undefined) => v || '';
+    lastPushedRef.current = `${norm(data.customerId)}|${norm(data.name)}|${norm(data.email)}|${norm(data.phone)}|${norm(data.address)}`;
+  };
+
   // Update parent when selection changes
   useEffect(() => {
     if (!isManualEntry && selectedCustomer) {
@@ -179,7 +226,7 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
         phone: selectedCustomer.phone,
         address: fullAddress,
       };
-      lastPushedRef.current = `${data.customerId}|${data.name}|${data.email}|${data.phone}|${data.address}`;
+      pushFingerprint(data);
       onChange?.(data);
     }
   }, [selectedCustomer, isManualEntry, onChange]);
@@ -191,7 +238,7 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
         customerId: undefined,
         ...directInput,
       };
-      lastPushedRef.current = `${data.customerId}|${data.name}|${data.email}|${data.phone}|${data.address}`;
+      pushFingerprint(data);
       onChange?.(data);
     }
   }, [directInput, isManualEntry, onChange]);
@@ -488,18 +535,23 @@ const CustomerSelector: React.FC<CustomerSelectorProps> = ({
               />
             </div>
 
-            <Input.TextArea
+            <AutoComplete
               value={directInput.address}
-              onChange={(e) => handleDirectInputChange('address', e.target.value)}
-              placeholder="Address (Street, City, State, ZIP)"
-              rows={3}
+              options={addressOptions}
+              onSearch={handleAddressSearch}
+              onSelect={handleAddressSelect}
               disabled={disabled}
-              style={{
-                fontFamily: fonts.body,
-                fontSize: 15,
-                resize: 'none',
-              }}
-            />
+              style={{ width: '100%' }}
+            >
+              <Input
+                placeholder="Address (start typing to search...)"
+                suffix={<EnvironmentOutlined style={{ color: '#bbb' }} />}
+                style={{
+                  fontFamily: fonts.body,
+                  fontSize: 15,
+                }}
+              />
+            </AutoComplete>
 
             {/* Save Customer Button */}
             {directInput.name.trim() && (

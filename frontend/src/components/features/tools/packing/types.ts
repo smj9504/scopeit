@@ -85,6 +85,7 @@ export interface QuickEstimateRequest {
   include_packback: boolean;
   include_op: boolean;
   op_rate: number;
+  material_rate: number;
   region: Region;
   special_items: string[];
   custom_special_items: CustomSpecialItem[];
@@ -99,6 +100,7 @@ export interface MaterialItem {
   unit: string;
   unit_price: number;
   total: number;
+  detail?: string;
 }
 
 export interface RoomItemSummary {
@@ -126,6 +128,7 @@ export interface SupplementItem {
   amount: number;
   triggered: boolean;
   enabled: boolean;
+  reason?: string;
 }
 
 export interface EstimateResponse {
@@ -153,6 +156,7 @@ export interface EstimateResponse {
   supplements: SupplementItem[];
   supplements_total: number;
   grand_total: number;
+  notes?: string[];
 }
 
 // ── Room Preset ──────────────────────────────────────────────────────────────
@@ -169,8 +173,14 @@ export interface RoomPreset {
 
 // ── Photo Analysis / Detected Items ──────────────────────────────────────────
 
+export type ItemSize = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL';
+export type ItemWeight = 'light' | 'medium' | 'heavy' | 'extra_heavy';
+
 export interface DetectedContentItem {
   name: string;
+  description?: string;
+  size?: ItemSize;
+  weight?: ItemWeight;
   category: string;
   quantity: number;
   is_high_value: boolean;
@@ -210,6 +220,12 @@ export interface ContentRoomInput {
   contamination: ContaminationLevel;
   special_items?: string[];
   custom_special_items?: CustomSpecialItem[];
+  // Preset fallback fields
+  use_preset?: boolean;
+  preset?: string;
+  hints?: string[];
+  hint_volume?: Record<string, number>;
+  hint_qty?: Record<string, number>;
 }
 
 export interface ContentEstimateRequest {
@@ -220,6 +236,7 @@ export interface ContentEstimateRequest {
   include_packback: boolean;
   include_op: boolean;
   op_rate: number;
+  material_rate: number;
   include_contingency?: boolean;
   contingency_rate?: number;
   region: Region;
@@ -278,6 +295,12 @@ export interface CompanyInfoOverride {
   license?: string;
 }
 
+export interface SavedCompanyProfile {
+  id: string;
+  label: string;  // display name for the dropdown
+  data: CompanyInfoOverride;
+}
+
 // ── Session / State ──────────────────────────────────────────────────────────
 
 export interface PackingSessionData {
@@ -316,7 +339,9 @@ export interface PhotoRoom {
   floor: Floor;
   density: Density;
   contamination: ContaminationLevel;
-  photos: string[];       // base64 encoded
+  photos: string[];       // base64 encoded (in-memory for display/analysis)
+  photo_keys: string[];   // storage keys (persisted across saves)
+  photo_count?: number;   // legacy: preserved for old sessions without photo_keys
   items: DetectedContentItem[];
   analyzed: boolean;
   analyzing: boolean;
@@ -325,6 +350,12 @@ export interface PhotoRoom {
   field_notes: string[];
   special_items: string[];
   custom_special_items: CustomSpecialItem[];
+  // Preset fallback (when AI analysis is unusable)
+  usePreset: boolean;
+  preset?: string;          // preset key (e.g. 'kitchen_standard')
+  hints: string[];
+  hint_volume: Record<string, number>;
+  hint_qty: Record<string, number>;
 }
 
 export interface PackingSettings {
@@ -334,6 +365,7 @@ export interface PackingSettings {
   include_packback: boolean;
   include_op: boolean;
   op_rate: number;
+  material_rate: number;
   region: Region;
   special_items: string[];
   custom_special_items: CustomSpecialItem[];
@@ -433,6 +465,7 @@ export interface ReportExportRequest {
   tax_rate: number;
   notes?: string;
   include_signature_page: boolean;
+  include_field_notes: boolean;
   image_quality: number;
   max_image_width: number;
 }

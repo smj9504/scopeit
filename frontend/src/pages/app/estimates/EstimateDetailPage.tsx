@@ -317,10 +317,27 @@ const EstimateDetailPage: React.FC = () => {
     { key: 'delete', icon: <DeleteOutlined />, label: 'Delete', danger: true },
   ];
 
+  const handleDownloadPdf = async () => {
+    try {
+      const blob = await estimateService.getPdf(id!);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${estimate?.estimateNumber || 'estimate'}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      message.success('PDF downloaded successfully');
+    } catch {
+      message.error('Failed to download PDF');
+    }
+  };
+
   const handleMenuClick = ({ key }: { key: string }) => {
     switch (key) {
       case 'download':
-        message.info('PDF download coming soon');
+        handleDownloadPdf();
         break;
       case 'send':
         message.info('Send feature coming soon');
@@ -429,7 +446,7 @@ const EstimateDetailPage: React.FC = () => {
           ) : (
             /* Desktop: All buttons visible */
             <Space>
-              <Button icon={<DownloadOutlined />}>Download PDF</Button>
+              <Button icon={<DownloadOutlined />} onClick={handleDownloadPdf}>Download PDF</Button>
               <Button icon={<SendOutlined />}>Send</Button>
               <Button
                 icon={<DollarOutlined />}

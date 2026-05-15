@@ -111,7 +111,25 @@ const PackingTool: React.FC<ToolComponentProps> = ({ sessionId, onCreateEstimate
     toolService.getSession(sessionId).then((session) => {
       const d = session.data as any;
       if (d?.rooms) setRooms(d.rooms);
-      if (d?.photo_rooms) setPhotoRooms(d.photo_rooms);
+      if (d?.photo_rooms) {
+        // Ensure photo_keys and other fields have defaults for old sessions
+        const restored = (d.photo_rooms as any[]).map((r: any) => ({
+          ...r,
+          photos: r.photos ?? [],
+          photo_keys: r.photo_keys ?? [],
+          items: r.items ?? [],
+          analyzed: r.analyzed ?? false,
+          analyzing: false,
+          field_notes: r.field_notes ?? [],
+          special_items: r.special_items ?? [],
+          custom_special_items: r.custom_special_items ?? [],
+          usePreset: r.usePreset ?? false,
+          hints: r.hints ?? [],
+          hint_volume: r.hint_volume ?? {},
+          hint_qty: r.hint_qty ?? {},
+        }));
+        setPhotoRooms(restored);
+      }
       if (d?.settings) setSettings(d.settings);
       if (d?.client_info) setClientInfo(d.client_info);
       if (d?.company_override) setCompanyOverride(d.company_override);
@@ -132,11 +150,32 @@ const PackingTool: React.FC<ToolComponentProps> = ({ sessionId, onCreateEstimate
 
     // Use ref to always get the latest result state (avoids stale closure)
     const currentResult = resultData ?? resultRef.current;
+    // Ensure all in-memory photos are uploaded to storage before saving.
+    // Upload any photos that don't yet have a corresponding photo_key.
+    const lightPhotoRooms = await Promise.all(photoRooms.map(async (r) => {
+      let keys = [...(r.photo_keys ?? [])];
+      // Upload missing photos: photos exist in memory but no matching key
+      if (r.photos.length > 0 && keys.length < r.photos.length) {
+        try {
+          const missingPhotos = r.photos.slice(keys.length);
+          const newKeys = await packingApi.uploadPhotos(missingPhotos);
+          keys = [...keys, ...newKeys];
+          // Update state so subsequent saves don't re-upload
+          r.photo_keys = keys;
+        } catch { /* non-fatal */ }
+      }
+      return {
+        ...r,
+        photos: [],  // base64 stripped — loaded from storage via photo_keys
+        photo_keys: keys,
+        photo_count: r.photos?.length || keys.length || r.photo_count || 0,
+      };
+    }));
     const sessionData = {
       mode,
       status: currentResult ? 'completed' : 'draft',
       rooms,
-      photo_rooms: photoRooms,
+      photo_rooms: lightPhotoRooms,
       settings,
       client_info: clientInfo,
       company_override: companyOverride,
@@ -177,6 +216,21 @@ const PackingTool: React.FC<ToolComponentProps> = ({ sessionId, onCreateEstimate
 
     return () => clearTimeout(autoSaveTimerRef.current);
   }, [view, rooms, photoRooms, settings, clientInfo, companyOverride, editorMode, result, saveSession]);
+
+  // ── Invalidate result when items are modified after calculate ──────────
+  // Track a fingerprint of items so we detect edits/adds/deletes
+  const itemsFingerprintRef = useRef('');
+  useEffect(() => {
+    if (!result) return; // no result to invalidate
+    const fp = photoRooms
+      .map((r) => r.items.map((i) => `${i.name}|${i.category}|${i.quantity}`).join(','))
+      .join(';');
+    if (itemsFingerprintRef.current && fp !== itemsFingerprintRef.current) {
+      // Items changed after calculate — mark result as stale
+      setResult((prev) => prev ? { ...prev, _stale: true } as any : prev);
+    }
+    itemsFingerprintRef.current = fp;
+  }, [photoRooms]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Estimate result handler ────────────────────────────────────────────
   const handleEstimateResult = useCallback((res: EstimateResponse, mode: PackingMode) => {

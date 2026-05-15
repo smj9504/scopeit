@@ -80,20 +80,36 @@ async function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/** Detect floor from room/section name */
+function detectFloor(name: string): PhotoRoom['floor'] {
+  const lower = name.toLowerCase();
+  if (/\bbasement\b|\bbsmt\b|\blower\s*level\b/.test(lower)) return 'basement';
+  if (/\b4th|\b4th\s*floor|\bfourth\s*floor|\b5th|\b6th/.test(lower)) return '4th+';
+  if (/\b3rd|\b3rd\s*floor|\bthird\s*floor/.test(lower)) return '3rd';
+  if (/\b2nd|\b2nd\s*floor|\bsecond\s*floor|\bupstairs\b/.test(lower)) return '2nd';
+  if (/\b1st|\b1st\s*floor|\bfirst\s*floor|\bmain\s*(floor|level)\b|\bground\b/.test(lower)) return '1st';
+  return '1st';
+}
+
 function defaultPhotoRoom(roomName: string): PhotoRoom {
   return {
     id: generateId(),
     room_name: roomName,
-    floor: '1st',
+    floor: detectFloor(roomName),
     density: 'normal',
     contamination: 'clean',
     photos: [],
+    photo_keys: [],
     items: [],
     analyzed: false,
     analyzing: false,
     field_notes: [],
     special_items: [],
     custom_special_items: [],
+    usePreset: false,
+    hints: [],
+    hint_volume: {},
+    hint_qty: {},
   };
 }
 

@@ -17,9 +17,11 @@ import {
   Card,
   Tooltip,
   Checkbox,
+  Alert,
 } from 'antd';
 import {
   CloseOutlined,
+  WarningOutlined,
   FilePdfOutlined,
   FileExcelOutlined,
   FileTextOutlined,
@@ -425,24 +427,54 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
   const handleSaveEdit = useCallback(() => {
     if (!editing) return;
     const { sectionName, lineIndex, name, detail, qty, unit, rate } = editing;
-    const newAmount = qty * rate;
+    const newAmount = Math.round(qty * rate * 100) / 100;
 
     setResult((prev) => {
       if (!prev) return prev;
-      const details = prev.section_details ? { ...prev.section_details } : {};
-      if (!details[sectionName]) return prev;
 
-      const lines = [...details[sectionName].lines];
-      lines[lineIndex] = { ...lines[lineIndex], name, detail, qty, unit, rate, amount: newAmount };
+      const isMat = sectionName === 'Materials';
+      const hasMaterialDetails = isMat && prev.material_details && prev.material_details.length > 0;
+
+      let newMaterialDetails = prev.material_details;
+      const details = prev.section_details ? { ...prev.section_details } : {};
+
+      if (hasMaterialDetails) {
+        // Update material_details
+        const md = [...prev.material_details!];
+        if (lineIndex < md.length) {
+          md[lineIndex] = {
+            ...md[lineIndex],
+            name,
+            code: detail,
+            quantity: qty,
+            unit,
+            unit_price: rate,
+            total: newAmount,
+          };
+        }
+        newMaterialDetails = md;
+
+        // Also sync section_details.Materials.lines if it exists
+        if (details[sectionName]) {
+          const sdLines = [...details[sectionName].lines];
+          if (lineIndex < sdLines.length) {
+            sdLines[lineIndex] = { ...sdLines[lineIndex], name, detail, qty, unit, rate, amount: newAmount };
+          }
+          details[sectionName] = { lines: sdLines };
+        }
+      } else {
+        if (!details[sectionName]) return prev;
+        const lines = [...details[sectionName].lines];
+        lines[lineIndex] = { ...lines[lineIndex], name, detail, qty, unit, rate, amount: newAmount };
+        details[sectionName] = { lines };
+      }
 
       // Recalculate section total
-      const sectionTotal = lines.reduce((sum, l) => sum + l.amount, 0);
+      const sectionTotal = hasMaterialDetails
+        ? newMaterialDetails!.reduce((sum, m) => sum + m.total, 0)
+        : details[sectionName]?.lines.reduce((sum: number, l: any) => sum + l.amount, 0) ?? 0;
       const newSections = { ...prev.sections, [sectionName]: sectionTotal };
-
-      // Recalculate subtotal
       const subtotal = Object.values(newSections).reduce((s, v) => s + v, 0);
-
-      // Recalculate op & contingency
       const opAmount = prev.include_op ? subtotal * (prev.op_rate / 100) : 0;
       const contingencyAmount = prev.include_contingency
         ? subtotal * (prev.contingency_rate / 100)
@@ -451,7 +483,8 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
       return {
         ...prev,
         sections: newSections,
-        section_details: { ...details, [sectionName]: { lines } },
+        section_details: details,
+        material_details: newMaterialDetails,
         subtotal,
         op_amount: opAmount,
         contingency_amount: contingencyAmount,
@@ -468,14 +501,54 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
     (sectionName: string, lineIndex: number) => {
       setResult((prev) => {
         if (!prev) return prev;
-        const details = prev.section_details ? { ...prev.section_details } : {};
-        if (!details[sectionName]) return prev;
 
-        const lines = [...details[sectionName].lines];
-        lines.splice(lineIndex, 1);
+        // Materials section: may use material_details instead of section_details
+        const isMat = sectionName === 'Materials';
+        const hasMaterialDetails = isMat && prev.material_details && prev.material_details.length > 0;
 
-        const sectionTotal = lines.reduce((sum, l) => sum + l.amount, 0);
+        let newMaterialDetails = prev.material_details;
+        let sectionTotal: number;
+
+        if (hasMaterialDetails) {
+          // Delete from material_details
+          const md = [...prev.material_details!];
+          md.splice(lineIndex, 1);
+          newMaterialDetails = md;
+          sectionTotal = md.reduce((sum, m) => sum + m.total, 0);
+        } else {
+          // Delete from section_details
+          const details = prev.section_details ? { ...prev.section_details } : {};
+          if (!details[sectionName]) return prev;
+          const lines = [...details[sectionName].lines];
+          lines.splice(lineIndex, 1);
+          sectionTotal = lines.reduce((sum, l) => sum + l.amount, 0);
+
+          const newSections = { ...prev.sections, [sectionName]: sectionTotal };
+          const subtotal = Object.values(newSections).reduce((s, v) => s + v, 0);
+          const opAmount = prev.include_op ? subtotal * (prev.op_rate / 100) : 0;
+          const contingencyAmount = prev.include_contingency
+            ? subtotal * (prev.contingency_rate / 100)
+            : 0;
+          return {
+            ...prev,
+            sections: newSections,
+            section_details: { ...details, [sectionName]: { lines } },
+            subtotal,
+            op_amount: opAmount,
+            contingency_amount: contingencyAmount,
+            grand_total: subtotal + opAmount + contingencyAmount + (prev.supplements_total || 0),
+          };
+        }
+
+        // Update section total and recalculate for material_details path
         const newSections = { ...prev.sections, [sectionName]: sectionTotal };
+        // Also sync section_details.Materials.lines if it exists
+        const details = prev.section_details ? { ...prev.section_details } : {};
+        if (details[sectionName]) {
+          const sdLines = [...details[sectionName].lines];
+          if (lineIndex < sdLines.length) sdLines.splice(lineIndex, 1);
+          details[sectionName] = { lines: sdLines };
+        }
         const subtotal = Object.values(newSections).reduce((s, v) => s + v, 0);
         const opAmount = prev.include_op ? subtotal * (prev.op_rate / 100) : 0;
         const contingencyAmount = prev.include_contingency
@@ -485,7 +558,8 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
         return {
           ...prev,
           sections: newSections,
-          section_details: { ...details, [sectionName]: { lines } },
+          section_details: details,
+          material_details: newMaterialDetails,
           subtotal,
           op_amount: opAmount,
           contingency_amount: contingencyAmount,
@@ -625,7 +699,9 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
       // Save latest edits to session before exporting
       if (onSaveSession) await onSaveSession();
       const blob = await packingApi.exportPdf(activeSessionId, companyOverride, taxRate);
-      triggerDownload(blob, `estimate-${activeSessionId}.pdf`);
+      const addr = clientInfo.property_address?.trim().replace(/[<>:"/\\|?*]+/g, '').replace(/\s+/g, ' ');
+      const pdfName = addr ? `Pack_in_out Estimate - ${addr}.pdf` : `Pack_in_out Estimate-${activeSessionId}.pdf`;
+      triggerDownload(blob, pdfName);
       message.success('PDF downloaded');
     } catch {
       message.error('Failed to export PDF');
@@ -643,7 +719,9 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
     try {
       if (onSaveSession) await onSaveSession();
       const blob = await packingApi.exportExcel(activeSessionId, companyOverride, taxRate);
-      triggerDownload(blob, `estimate-${activeSessionId}.xlsx`);
+      const addr = clientInfo.property_address?.trim().replace(/[<>:"/\\|?*]+/g, '').replace(/\s+/g, ' ');
+      const xlsName = addr ? `Pack_in_out Estimate - ${addr}.xlsx` : `Pack_in_out Estimate-${activeSessionId}.xlsx`;
+      triggerDownload(blob, xlsName);
       message.success('Excel downloaded');
     } catch {
       message.error('Failed to export Excel');
@@ -675,7 +753,7 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
                   color: colors.textPrimary,
                 }}
               >
-                {sectionName}{isMaterialsSection && result.material_details ? ` (${result.material_details.length} items)` : ''}
+                {sectionName}{isMaterialsSection && (result.material_details || detail?.lines) ? ` (${(result.material_details?.length ?? detail?.lines?.length ?? 0)} items)` : ''}
               </Text>
             </Col>
             <Col>
@@ -701,12 +779,26 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
             sectionName={sectionName}
             lines={result.material_details.map((m) => ({
               name: m.name,
-              detail: m.code ?? '',
+              detail: m.detail ?? m.code ?? '',
               qty: m.quantity,
               unit: m.unit,
               rate: m.unit_price,
               amount: m.total,
             }))}
+            editing={editing}
+            onStartEdit={handleStartEdit}
+            onEditField={handleEditField}
+            onSaveEdit={handleSaveEdit}
+            onCancelEdit={handleCancelEdit}
+            onDeleteLine={handleDeleteLine}
+          />
+        )}
+
+        {/* Materials fallback: use section_details lines when material_details is absent */}
+        {isMaterialsSection && !result.material_details && detail && detail.lines.length > 0 && (
+          <SectionLineTable
+            sectionName={sectionName}
+            lines={detail.lines}
             editing={editing}
             onStartEdit={handleStartEdit}
             onEditField={handleEditField}
@@ -950,6 +1042,18 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
           )}
         </div>
 
+        {/* Stale result warning */}
+        {(result as any)?._stale && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 12px', background: '#fffbeb', border: '1px solid #fde68a',
+            borderRadius: borderRadius.base, fontSize: 12, color: '#92400e',
+          }}>
+            <WarningOutlined />
+            Items were modified. Re-calculate to update the estimate.
+          </div>
+        )}
+
         {/* Right: close button */}
         <Button
           type="text"
@@ -1138,6 +1242,21 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
             </Row>
           </Card>
 
+          {/* ── Scheduling Notes ─────────────────────────────────────────────── */}
+          {result.notes && result.notes.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              {result.notes.map((note, i) => (
+                <Alert
+                  key={i}
+                  message={note}
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: i < result.notes!.length - 1 ? 8 : 0 }}
+                />
+              ))}
+            </div>
+          )}
+
           {/* ── Totals Panel ────────────────────────────────────────────────── */}
           <Card
             style={{
@@ -1206,13 +1325,13 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
             {/* Conditional Supplements */}
             {(result.supplements || []).filter(s => s.triggered).length > 0 && (
               <>
-                <div style={{ fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 1, marginTop: 4, marginBottom: 6 }}>
                   Conditional Supplements
                 </div>
                 {(result.supplements || []).filter(s => s.triggered).map(s => (
-                  <Row key={s.key} justify="space-between" align="middle" style={{ marginBottom: 4 }}>
-                    <Col>
-                      <Space size={6}>
+                  <Row key={s.key} justify="space-between" align="top" style={{ marginBottom: 6 }}>
+                    <Col flex="1" style={{ minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Checkbox
                           checked={s.enabled}
                           onChange={(e) => {
@@ -1232,11 +1351,35 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
                           }}
                         />
                         <Tooltip title={s.description}>
-                          <Text style={{ fontSize: 12 }}>{s.name}</Text>
+                          <Text style={{ fontSize: 13 }}>{s.name}</Text>
                         </Tooltip>
-                      </Space>
+                      </div>
+                      {s.enabled && (
+                        <Input
+                          size="small"
+                          placeholder="Reason (shown on estimate)"
+                          value={s.reason || ''}
+                          onChange={(e) => {
+                            setResult(prev => {
+                              if (!prev) return prev;
+                              return {
+                                ...prev,
+                                supplements: (prev.supplements || []).map(p =>
+                                  p.key === s.key ? { ...p, reason: e.target.value } : p
+                                ),
+                              };
+                            });
+                          }}
+                          style={{
+                            marginTop: 4,
+                            marginLeft: 28,
+                            fontSize: 12,
+                            color: colors.textSecondary,
+                          }}
+                        />
+                      )}
                     </Col>
-                    <Col>
+                    <Col flex="none">
                       <InputNumber
                         size="small"
                         value={s.amount || 0}

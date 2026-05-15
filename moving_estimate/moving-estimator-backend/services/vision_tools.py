@@ -53,6 +53,169 @@ ESTIMATOR_FLAGS = [
 
 
 # ============================================
+# COMBINED TOOL: Single-pass (Vision + Packing)
+# ============================================
+
+COMBINED_TOOL = {
+    "name": "report_room_contents_with_packing",
+    "description": (
+        "Report all packable items visible in the room photo(s), including full packing details. "
+        "Each item should be named for PACKING purposes only -- include type, "
+        "material, and size when relevant. Omit colors, patterns, brand names, "
+        "and character references."
+    ),
+    "input_schema": {
+        "type": "object",
+        "required": ["items", "density", "room_size", "confidence"],
+        "properties": {
+            "items": {
+                "type": "array",
+                "description": (
+                    "Every MOVABLE, packable item visible. "
+                    "INCLUDE: freestanding furniture, electronics, boxes, decor, rugs, baskets, lamps, books, artwork, bedding, clothing, freestanding appliances (fridge, washer/dryer, stove), wall-mounted TVs. "
+                    "EXCLUDE anything permanently attached to the building structure."
+                ),
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "name", "category", "quantity",
+                        "is_high_value", "is_fragile",
+                        "needs_disassembly", "packing_method",
+                        "required_materials", "estimated_labor_hours",
+                    ],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "category": {
+                            "type": "string",
+                            "enum": ITEM_CATEGORIES,
+                        },
+                        "quantity": {"type": "integer", "minimum": 1},
+                        "is_high_value": {"type": "boolean"},
+                        "estimated_value": {"type": ["string", "null"]},
+                        "is_fragile": {"type": "boolean"},
+                        "needs_disassembly": {
+                            "type": "boolean",
+                            "description": "True only if disassembly is required for transport",
+                        },
+                        "packing_method": {
+                            "type": "string",
+                            "description": "Step-by-step packing instruction. Be specific.",
+                        },
+                        "required_materials": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": MATERIAL_KEYS,
+                            },
+                            "description": (
+                                "Materials needed FOR ONE UNIT. REPEAT a key to indicate more than 1 of that material per single unit. "
+                                "The system multiplies by item quantity automatically. "
+                                "Example: 1 sofa → ['sofa_cover','moving_blanket','moving_blanket','stretch_wrap'] "
+                                "(1 cover + 2 blankets + 1 wrap PER sofa; qty=3 sofas → 3 covers, 6 blankets, 3 wraps). "
+                                "For cover materials: list once per single item that needs it (e.g. ['chair_cover'] for each chair). "
+                                "For box/roll types: list the type once — quantity is calculated from item count."
+                            ),
+                        },
+                        "estimated_labor_hours": {
+                            "type": "number",
+                            "minimum": 0.05,
+                            "maximum": 4.0,
+                            "description": "TOTAL packing time for ONE person for ALL units of this entry combined.",
+                        },
+                        "special_instructions": {
+                            "type": ["string", "null"],
+                        },
+                        "estimator_flags": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ESTIMATOR_FLAGS,
+                            },
+                        },
+                    },
+                },
+            },
+            "density": {
+                "type": "string",
+                "enum": DENSITY_VALUES,
+                "description": (
+                    "light: sparsely furnished. normal: typical furnishing. "
+                    "dense: heavily furnished. heavy: packed/cluttered."
+                ),
+            },
+            "room_size": {
+                "type": "string",
+                "enum": ROOM_SIZE_VALUES,
+                "description": (
+                    "small: <80 sqft. large: 80-250 sqft. xlarge: 250+ sqft."
+                ),
+            },
+            "confidence": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+            },
+        },
+    },
+}
+
+
+def build_combined_tool_prompt(
+    room_name: str,
+    num_images: int,
+    existing_items: Optional[list] = None,
+) -> str:
+    """Build a single-pass prompt that identifies items AND adds packing details."""
+    multi_note = ""
+    if num_images > 1:
+        multi_note = (
+            f"\nYou see {num_images} photos of the SAME room from different angles. "
+            "Count each real-world item ONLY ONCE using spatial reasoning.\n"
+        )
+
+    existing_note = ""
+    if existing_items:
+        items_str = ", ".join(
+            f"{item.name} (x{item.quantity})" for item in existing_items
+        )
+        existing_note = (
+            f"\nAlready inventoried (SKIP these): {items_str}\n"
+            "Only report items NOT on this list.\n"
+        )
+
+    return f"""You are a professional Content Pack-Out Estimator. Analyze the photo(s) and for each item provide BOTH identification AND packing details in one pass.
+{multi_note}{existing_note}
+NOTE: The user labeled this room "{room_name}" but IGNORE that label when deciding what items exist. Only report what you ACTUALLY SEE.
+
+IDENTIFICATION RULES:
+1. List every MOVABLE, packable item — furniture, electronics, decor, rugs, lamps, books, artwork, bedding, clothing, freestanding appliances, wall-mounted TVs.
+2. EXCLUDE permanently attached fixtures: recessed lights, ceiling fans, built-in cabinets, countertops, bathtub, toilet, HVAC vents, wall-mounted blinds.
+3. NAME items for packing: type + material + size. NO colors, patterns, brands, characters.
+   GOOD: "Queen Bed Frame", "4-Drawer Wooden Dresser", "3-Section Sectional Sofa"
+   BAD: "Colorful Quilt", "Dark Brown Bookshelf"
+4. Scan EVERY area: foreground, background, shelves, floor, walls, corners.
+5. Report container CONTENTS separately (books on shelf → list shelf + "Book Collection").
+
+PACKING DETAILS (for each item):
+- needs_disassembly: true only if required for transport
+- packing_method: step-by-step instruction (e.g. "Empty drawers; wrap in moving blanket; tape drawers shut")
+- required_materials: Materials needed FOR ONE UNIT. Repeat a key for each additional of that material per single unit.
+  System multiplies by item quantity. ["chair_cover"] for 1 chair (qty=6 → 6 covers auto). ["moving_blanket","moving_blanket","moving_blanket"] = 3 blankets per sofa.
+  Boxes/rolls: list type once — system calculates count from item quantity.
+- estimated_labor_hours: total time for ONE person for ALL units combined
+  Small item: 0.05-0.25h | Chair: 0.25-0.5h | Sofa: 0.75-1.0h | Large wardrobe: 1.0-2.0h | Book collection (80 books): 1.5-2.0h
+- estimator_flags: [HEAVY, HIGH_VALUE, FRAGILE, CHECK_MOISTURE, LIQUID_ITEMS, DOCUMENTS, VERIFY_CONTENTS, DISASSEMBLY]
+
+DENSITY (PRIMARY space only, exclude closets):
+- light: few large pieces, lots of open floor
+- normal: typical furnishing (bed + dresser + nightstands)
+- dense: heavily furnished, limited walkway
+- heavy: packed/cluttered, hoarding-level
+
+Use the report_room_contents_with_packing tool to submit your findings."""
+
+
+# ============================================
 # PASS 1 TOOL: Item Identification (Vision)
 # ============================================
 

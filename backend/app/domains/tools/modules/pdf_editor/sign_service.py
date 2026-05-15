@@ -3,6 +3,7 @@ ScopeIt - E-Sign Service
 """
 import os
 import secrets
+import tempfile
 from datetime import datetime, timedelta
 from io import BytesIO
 from typing import Optional
@@ -13,17 +14,18 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.email import email_service
+from app.core.storage import get_storage, StorageBackend
 from app.domains.tools.modules.pdf_editor.models import (
     PdfDocument,
     SignAuditEvent,
     SignRequest,
-    SignRequestStatus,
 )
 
 
 class SignService:
     def __init__(self, db: Session):
         self.db = db
+        self.storage: StorageBackend = get_storage()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -392,34 +394,52 @@ class SignService:
     # ------------------------------------------------------------------
 
     def _burn_signature(self, sign_req: SignRequest) -> str:
-        """Burn signature image into the document at the designated sign fields."""
+        """Burn signature into the document. Returns storage key."""
         import base64
 
         doc = sign_req.document
-        if not doc or not os.path.exists(doc.file_path):
+        if not doc or not self.storage.exists(doc.file_path):
             raise ValueError("Source document not found")
 
         mime = (doc.mime_type or "").lower()
         sig_bytes = base64.b64decode(sign_req.signature_data)
-        doc_dir = os.path.dirname(doc.file_path)
 
-        if mime.startswith("image/"):
-            return self._burn_signature_image(
-                sign_req, sig_bytes, doc_dir
-            )
-        else:
-            return self._burn_signature_pdf(
-                sign_req, sig_bytes, doc_dir
-            )
+        with tempfile.TemporaryDirectory(prefix="scopeit_sign_") as tmpdir:
+            # Download source document
+            src_path = os.path.join(tmpdir, "source.pdf")
+            with open(src_path, "wb") as f:
+                f.write(self.storage.read(doc.file_path))
+
+            signed_path = os.path.join(tmpdir, "signed.pdf")
+
+            if mime.startswith("image/"):
+                self._burn_signature_image(
+                    sign_req, sig_bytes, src_path, signed_path
+                )
+            else:
+                self._burn_signature_pdf(
+                    sign_req, sig_bytes, src_path, signed_path
+                )
+
+            # Upload signed PDF to storage
+            # Derive key from doc's key
+            key_parts = doc.file_path.rsplit("/", 1)
+            signed_key = f"{key_parts[0]}/signed.pdf"
+            with open(signed_path, "rb") as f:
+                self.storage.write(
+                    signed_key, f.read(), "application/pdf"
+                )
+
+        return signed_key
 
     def _burn_signature_image(
-        self, sign_req: SignRequest, sig_bytes: bytes, doc_dir: str
-    ) -> str:
+        self, sign_req: SignRequest, sig_bytes: bytes,
+        src_path: str, output_path: str,
+    ) -> None:
         """Burn signature onto an image file, output as PDF."""
         from PIL import Image
 
-        doc = sign_req.document
-        base_img = Image.open(doc.file_path).convert("RGBA")
+        base_img = Image.open(src_path).convert("RGBA")
         img_w, img_h = base_img.size
 
         sig_img = Image.open(BytesIO(sig_bytes)).convert("RGBA")
@@ -490,20 +510,18 @@ class SignService:
 
         # Convert to RGB and save as PDF
         output = base_img.convert("RGB")
-        signed_path = os.path.join(doc_dir, "signed.pdf")
-        output.save(signed_path, "PDF", resolution=150)
-        return signed_path
+        output.save(output_path, "PDF", resolution=150)
 
     def _burn_signature_pdf(
-        self, sign_req: SignRequest, sig_bytes: bytes, doc_dir: str
-    ) -> str:
+        self, sign_req: SignRequest, sig_bytes: bytes,
+        src_path: str, output_path: str,
+    ) -> None:
         """Burn signature onto a PDF file."""
-        from pypdf import PdfReader, PdfWriter  # type: ignore
-        from reportlab.lib.utils import ImageReader  # type: ignore
-        from reportlab.pdfgen import canvas as rl_canvas  # type: ignore
+        from pypdf import PdfReader, PdfWriter
+        from reportlab.lib.utils import ImageReader
+        from reportlab.pdfgen import canvas as rl_canvas
 
-        doc = sign_req.document
-        reader = PdfReader(doc.file_path)
+        reader = PdfReader(src_path)
         writer = PdfWriter()
 
         # Group sign fields by page (1-indexed in field, 0-indexed in reader)
@@ -566,11 +584,8 @@ class SignService:
 
             writer.add_page(page)
 
-        signed_path = os.path.join(doc_dir, "signed.pdf")
-        with open(signed_path, "wb") as f:
+        with open(output_path, "wb") as f:
             writer.write(f)
-
-        return signed_path
 
     # ------------------------------------------------------------------
     # Email template
@@ -710,10 +725,9 @@ class SignService:
         try:
             # Attach signed PDF if available
             attachments = None
-            signed_path = sign_req.signed_file_path
-            if signed_path and os.path.exists(signed_path):
-                with open(signed_path, "rb") as f:
-                    pdf_data = f.read()
+            signed_key = sign_req.signed_file_path
+            if signed_key and self.storage.exists(signed_key):
+                pdf_data = self.storage.read(signed_key)
                 base_name = os.path.splitext(doc_name)[0]
                 attachments = [{
                     "data": pdf_data,
@@ -723,13 +737,16 @@ class SignService:
 
             email_service.send_email(
                 to_email=sign_req.sender_email,
-                subject=f"{sign_req.recipient_name} has signed {doc_name}",
+                subject=(
+                    f"{sign_req.recipient_name} has signed "
+                    f"{doc_name}"
+                ),
                 html_content=html,
                 reply_to=sign_req.recipient_email,
                 attachments=attachments,
             )
         except Exception:
-            pass  # Don't fail the signing if notification fails
+            pass
 
     def _send_signer_copy(self, sign_req: SignRequest) -> None:
         """Send a copy of the signed PDF to the person who signed it."""
@@ -779,10 +796,9 @@ class SignService:
 
         try:
             attachments = None
-            signed_path = sign_req.signed_file_path
-            if signed_path and os.path.exists(signed_path):
-                with open(signed_path, "rb") as f:
-                    pdf_data = f.read()
+            signed_key = sign_req.signed_file_path
+            if signed_key and self.storage.exists(signed_key):
+                pdf_data = self.storage.read(signed_key)
                 base_name = os.path.splitext(doc_name)[0]
                 attachments = [{
                     "data": pdf_data,
@@ -798,4 +814,4 @@ class SignService:
                 attachments=attachments,
             )
         except Exception:
-            pass  # Don't fail the signing if copy email fails
+            pass

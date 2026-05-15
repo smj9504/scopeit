@@ -4,7 +4,7 @@
  * Photo-based packing estimation using AI room analysis.
  */
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Steps,
   Card,
@@ -23,6 +23,7 @@ import {
   Alert,
   Collapse,
   Divider,
+  Image,
 } from 'antd';
 import {
   PlusOutlined,
@@ -43,6 +44,7 @@ import {
   CloseOutlined,
   DownOutlined,
   RightOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
 import { packingApi } from './packingApi';
 import { FolderImportModal } from './FolderImportModal';
@@ -52,6 +54,11 @@ import {
   FLOOR_OPTIONS,
   CONTAMINATION_OPTIONS,
   REGION_OPTIONS,
+  HINT_CATEGORIES,
+  UNIT_HINTS,
+  QTY_CHIPS,
+  HINT_VOLUME_LEVELS,
+  PRESET_CATEGORY_ICONS,
 } from './constants';
 import { ITEM_CATEGORIES } from './types';
 import { SharedDetailsStep } from './SharedDetailsStep';
@@ -96,7 +103,7 @@ interface PhotoAITabProps {
 interface EditingCell {
   roomId: string;
   itemIndex: number;
-  field: 'name' | 'category' | 'quantity';
+  field: 'name' | 'description' | 'size' | 'weight' | 'category' | 'quantity';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,21 +112,38 @@ function generateId(): string {
   return `room_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** Detect floor from room/section name (e.g. "2nd Floor Kitchen" → "2nd") */
+function detectFloor(name: string): PhotoRoom['floor'] {
+  const lower = name.toLowerCase();
+  if (/\bbasement\b|\bbsmt\b|\blower\s*level\b/.test(lower)) return 'basement';
+  if (/\b4th|\b4th\s*floor|\bfourth\s*floor|\b5th|\b6th/.test(lower)) return '4th+';
+  if (/\b3rd|\b3rd\s*floor|\bthird\s*floor/.test(lower)) return '3rd';
+  if (/\b2nd|\b2nd\s*floor|\bsecond\s*floor|\bupstairs\b/.test(lower)) return '2nd';
+  if (/\b1st|\b1st\s*floor|\bfirst\s*floor|\bmain\s*(floor|level)\b|\bground\b/.test(lower)) return '1st';
+  return '1st';
+}
+
 function defaultPhotoRoom(roomName: string, presetId?: string): PhotoRoom {
   return {
     id: generateId(),
     room_name: roomName,
     preset_id: presetId,
-    floor: '1st',
+    floor: detectFloor(roomName),
     density: 'normal',
     contamination: 'clean',
     photos: [],
+    photo_keys: [],
     items: [],
     analyzed: false,
     analyzing: false,
     field_notes: [],
     special_items: [],
     custom_special_items: [],
+    usePreset: false,
+    preset: undefined,
+    hints: [],
+    hint_volume: {},
+    hint_qty: {},
   };
 }
 
@@ -387,6 +411,7 @@ const AddRoomPanel: React.FC<AddRoomPanelProps> = ({ presets, presetsLoading, on
         /* Has photos: thumbnails + add more + submit */
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, flexWrap: 'wrap', minWidth: 0 }}>
+            <Image.PreviewGroup>
             {pendingPhotos.map((b64, i) => (
               <div
                 key={i}
@@ -400,7 +425,14 @@ const AddRoomPanel: React.FC<AddRoomPanelProps> = ({ presets, presetsLoading, on
                   flexShrink: 0,
                 }}
               >
-                <img src={toDataUri(b64)} alt={`Photo ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <Image
+                  src={toDataUri(b64)}
+                  alt={`Photo ${i + 1}`}
+                  width={44}
+                  height={44}
+                  style={{ objectFit: 'cover', display: 'block' }}
+                  preview={{ mask: false }}
+                />
                 <button
                   onClick={() => setPendingPhotos((prev) => prev.filter((_, idx) => idx !== i))}
                   style={{
@@ -427,6 +459,7 @@ const AddRoomPanel: React.FC<AddRoomPanelProps> = ({ presets, presetsLoading, on
                 </button>
               </div>
             ))}
+            </Image.PreviewGroup>
             <div
               onClick={() => addFileRef.current?.click()}
               style={{
@@ -509,7 +542,12 @@ const ItemRow: React.FC<ItemRowProps> = ({
 
   const startEdit = (field: EditingCell['field']) => {
     const initial =
-      field === 'name' ? item.name : field === 'category' ? item.category : item.quantity;
+      field === 'name' ? item.name
+      : field === 'description' ? (item.description || '')
+      : field === 'size' ? (item.size || 'M')
+      : field === 'weight' ? (item.weight || 'medium')
+      : field === 'category' ? item.category
+      : item.quantity;
     setEditValue(initial);
     onStartEdit({ roomId, itemIndex, field });
   };
@@ -552,23 +590,82 @@ const ItemRow: React.FC<ItemRowProps> = ({
         />
       ) : (
         <div
-          style={{ ...cellStyle, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}
+          style={{ ...cellStyle, display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0, cursor: 'pointer' }}
           onClick={() => startEdit('name')}
           title="Click to edit"
         >
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: colors.textPrimary }}>
-            {item.name}
-          </span>
-          {item.is_high_value && (
-            <Tooltip title="High value">
-              <StarOutlined style={{ color: colors.warning, fontSize: 11, flexShrink: 0 }} />
-            </Tooltip>
-          )}
-          {item.is_fragile && (
-            <Tooltip title="Fragile">
-              <WarningOutlined style={{ color: colors.error, fontSize: 11, flexShrink: 0 }} />
-            </Tooltip>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: colors.textPrimary }}>
+              {item.name}
+            </span>
+            {item.is_high_value && (
+              <Tooltip title="High value">
+                <StarOutlined style={{ color: colors.warning, fontSize: 11, flexShrink: 0 }} />
+              </Tooltip>
+            )}
+            {item.is_fragile && (
+              <Tooltip title="Fragile">
+                <WarningOutlined style={{ color: colors.error, fontSize: 11, flexShrink: 0 }} />
+              </Tooltip>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginTop: 2, flexWrap: 'wrap' }}>
+            {/* Size tag */}
+            {isEditing('size') ? (
+              <Select
+                size="small"
+                value={editValue as string}
+                autoFocus
+                open
+                onChange={(v) => { setEditValue(v); onCommitEdit(roomId, itemIndex, 'size', v); }}
+                onBlur={() => onCancelEdit()}
+                style={{ fontSize: 10, width: 60 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map((s) => <Option key={s} value={s}>{s}</Option>)}
+              </Select>
+            ) : (
+              <Tag
+                style={{ fontSize: 10, margin: 0, cursor: 'pointer', lineHeight: '16px', padding: '0 4px' }}
+                onClick={(e) => { e.stopPropagation(); startEdit('size'); }}
+                title="Size class (click to change)"
+              >
+                {item.size || 'M'}
+              </Tag>
+            )}
+            {/* Weight tag */}
+            {isEditing('weight') ? (
+              <Select
+                size="small"
+                value={editValue as string}
+                autoFocus
+                open
+                onChange={(v) => { setEditValue(v); onCommitEdit(roomId, itemIndex, 'weight', v); }}
+                onBlur={() => onCancelEdit()}
+                style={{ fontSize: 10, width: 100 }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {[['light', 'Light'], ['medium', 'Medium'], ['heavy', 'Heavy'], ['extra_heavy', 'Extra Heavy']].map(([k, l]) => <Option key={k} value={k}>{l}</Option>)}
+              </Select>
+            ) : (
+              <Tag
+                color={item.weight === 'heavy' || item.weight === 'extra_heavy' ? 'warning' : 'default'}
+                style={{ fontSize: 10, margin: 0, cursor: 'pointer', lineHeight: '16px', padding: '0 4px' }}
+                onClick={(e) => { e.stopPropagation(); startEdit('weight'); }}
+                title="Weight class (click to change)"
+              >
+                {(item.weight || 'medium').replace('_', ' ')}
+              </Tag>
+            )}
+            {/* Description (if present) */}
+            {item.description && (
+              <Tooltip title={item.description}>
+                <span style={{ fontSize: 10, color: colors.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 120 }}>
+                  {item.description}
+                </span>
+              </Tooltip>
+            )}
+          </div>
         </div>
       )}
 
@@ -644,6 +741,7 @@ const ItemRow: React.FC<ItemRowProps> = ({
 
 interface RoomCardProps {
   room: PhotoRoom;
+  presets: Record<string, RoomPreset[]>;
   editingCell: EditingCell | null;
   onUpdate: (id: string, updates: Partial<PhotoRoom>) => void;
   onDelete: (id: string) => void;
@@ -661,6 +759,7 @@ interface RoomCardProps {
 
 const RoomCard: React.FC<RoomCardProps> = ({
   room,
+  presets,
   editingCell,
   onUpdate,
   onDelete,
@@ -675,12 +774,94 @@ const RoomCard: React.FC<RoomCardProps> = ({
   onDeleteItem,
   analysisFailed,
 }) => {
+  const isNarrow = useIsNarrow();
   const [editingAttrs, setEditingAttrs] = useState(false);
   const [itemsCollapsed, setItemsCollapsed] = useState(false);
+  const [expandedHintKey, setExpandedHintKey] = useState<string | null>(null);
+  const [selectedPhotoIdx, setSelectedPhotoIdx] = useState(0);
+  // Blob URLs for storage-backed photos (fetched with auth)
+  const [blobUrls, setBlobUrls] = useState<Record<string, string>>({});
+  const [failedKeys, setFailedKeys] = useState<Set<string>>(new Set());
+  const loadingRef = useRef(false);
+
+  // Load storage photos in parallel (all at once — browser handles concurrency)
+  useEffect(() => {
+    const keys = room.photo_keys ?? [];
+    if (room.photos.length > 0 || keys.length === 0 || loadingRef.current) return;
+    loadingRef.current = true;
+
+    keys.forEach((key) => {
+      packingApi.fetchPhotoBlobUrl(key).then((url) => {
+        setBlobUrls((prev) => ({ ...prev, [key]: url }));
+      }).catch(() => {
+        setFailedKeys((prev) => new Set(prev).add(key));
+      });
+    });
+  }, [room.photo_keys, room.photos.length]);
+
+  const allPresets: RoomPreset[] = Object.values(presets).flat();
 
   const totalLaborHours = room.items.reduce((sum, item) => sum + (item.estimated_labor_hours ?? 0), 0);
   const fragileCount = room.items.filter((i) => i.is_fragile).length;
   const specialItemCount = room.special_items.length + room.custom_special_items.length;
+
+  // Preset mode handlers
+  const handleTogglePresetMode = useCallback(() => {
+    onUpdate(room.id, { usePreset: !room.usePreset });
+  }, [room.id, room.usePreset, onUpdate]);
+
+  const handlePresetSelect = useCallback(
+    (presetKey: string) => {
+      const preset = allPresets.find((p) => p.key === presetKey);
+      onUpdate(room.id, {
+        preset: presetKey,
+        hints: [...(preset?.default_hints ?? [])],
+        hint_volume: {},
+        hint_qty: {},
+      });
+    },
+    [room.id, allPresets, onUpdate],
+  );
+
+  const handleToggleHint = useCallback(
+    (hint: string) => {
+      const has = room.hints.includes(hint);
+      if (has) {
+        const newQty = { ...room.hint_qty };
+        const newVol = { ...room.hint_volume };
+        delete newQty[hint];
+        delete newVol[hint];
+        onUpdate(room.id, {
+          hints: room.hints.filter((h) => h !== hint),
+          hint_qty: newQty,
+          hint_volume: newVol,
+        });
+      } else {
+        const isUnit = UNIT_HINTS.has(hint);
+        const isVolume = !isUnit && hint in HINT_VOLUME_LEVELS;
+        onUpdate(room.id, {
+          hints: [...room.hints, hint],
+          hint_qty: isUnit ? { ...room.hint_qty, [hint]: 1 } : room.hint_qty,
+          hint_volume: isVolume ? { ...room.hint_volume, [hint]: 1 } : room.hint_volume,
+        });
+      }
+    },
+    [room.id, room.hints, room.hint_qty, room.hint_volume, onUpdate],
+  );
+
+  const handleHintQty = useCallback(
+    (hint: string, qty: number) => {
+      onUpdate(room.id, { hint_qty: { ...room.hint_qty, [hint]: qty } });
+    },
+    [room.id, room.hint_qty, onUpdate],
+  );
+
+  const handleHintVolume = useCallback(
+    (hint: string, levelIdx: number) => {
+      onUpdate(room.id, { hint_volume: { ...room.hint_volume, [hint]: levelIdx } });
+    },
+    [room.id, room.hint_volume, onUpdate],
+  );
 
   const handleToggleSpecialItem = useCallback(
     (key: string) => {
@@ -717,7 +898,7 @@ const RoomCard: React.FC<RoomCardProps> = ({
         border: `1px solid ${
           analysisFailed
             ? colors.error + '55'
-            : room.analyzed
+            : (room.analyzed || (room.usePreset && room.preset))
               ? colors.success + '55'
               : colors.border
         }`,
@@ -728,9 +909,23 @@ const RoomCard: React.FC<RoomCardProps> = ({
       title={
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6, minHeight: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
-            <span style={{ fontFamily: fonts.heading, fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {room.room_name}
-            </span>
+            {editingAttrs ? (
+              <Input
+                size="small"
+                value={room.room_name}
+                onChange={(e) => onUpdate(room.id, { room_name: e.target.value })}
+                style={{ fontFamily: fonts.heading, fontWeight: 600, fontSize: 14, width: 180 }}
+                autoFocus
+              />
+            ) : (
+              <span
+                style={{ fontFamily: fonts.heading, fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                onClick={() => setEditingAttrs(true)}
+                title="Click to rename"
+              >
+                {room.room_name}
+              </span>
+            )}
             {!editingAttrs && (
               <>
                 <Tag style={{ margin: 0, fontSize: 11, borderRadius: 4 }}>{room.floor}</Tag>
@@ -755,6 +950,11 @@ const RoomCard: React.FC<RoomCardProps> = ({
                   whiteSpace: 'nowrap',
                 }}
               />
+            )}
+            {room.usePreset && (
+              <Tag style={{ margin: 0, fontSize: 10, borderRadius: 4, border: 'none', background: colors.primary + '15', color: colors.primary, fontWeight: 600 }}>
+                Preset
+              </Tag>
             )}
             {room.analyzing && <LoadingOutlined style={{ fontSize: 14, color: colors.info }} />}
           </div>
@@ -826,237 +1026,326 @@ const RoomCard: React.FC<RoomCardProps> = ({
           </div>
         )}
 
-        {/* Photos */}
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            {room.photos.map((b64, i) => (
-              <div
-                key={i}
-                style={{
-                  position: 'relative',
-                  width: 56,
-                  height: 56,
-                  borderRadius: borderRadius.base,
-                  overflow: 'hidden',
-                  border: `1px solid ${colors.border}`,
-                  flexShrink: 0,
-                }}
-              >
-                <img
-                  src={toDataUri(b64)}
-                  alt={`Photo ${i + 1}`}
-                  style={{ width: 56, height: 56, objectFit: 'cover', display: 'block' }}
-                />
-                {!room.analyzing && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); onRemovePhoto(room.id, i); }}
-                    style={{
-                      position: 'absolute',
-                      top: 2,
-                      right: 2,
-                      width: 18,
-                      height: 18,
-                      borderRadius: '50%',
-                      border: 'none',
-                      background: 'rgba(0,0,0,0.6)',
-                      color: '#fff',
-                      fontSize: 11,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: 0,
-                      lineHeight: 1,
-                      zIndex: 10,
-                    }}
-                    aria-label="Remove photo"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-            {!room.analyzing && (
-              <div
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = 'image/*';
-                  input.multiple = true;
-                  input.onchange = () => {
-                    if (input.files && input.files.length > 0) onAddPhoto(room.id, input.files);
-                  };
-                  input.click();
-                }}
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderRadius: borderRadius.base,
-                  border: `1px dashed ${colors.border}`,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  background: colors.bgLight,
-                  flexShrink: 0,
-                  gap: 2,
-                }}
-              >
-                <PlusOutlined style={{ fontSize: 14, color: colors.textMuted }} />
-                <span style={{ fontSize: 10, color: colors.textMuted }}>Photo</span>
-              </div>
-            )}
-            <span style={{ fontSize: 12, color: colors.textMuted, fontFamily: fonts.body }}>
-              {room.photos.length} photo{room.photos.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-        </div>
+        {/* ── Two-column layout (desktop) / stacked (mobile) ── */}
+        {(() => {
+          const hasBase64 = room.photos.length > 0;
+          const photoKeys = room.photo_keys ?? [];
+          const photoCount = hasBase64 ? room.photos.length : photoKeys.length;
+          const photoSrcs = Array.from({ length: photoCount }, (_, i) =>
+            hasBase64 ? toDataUri(room.photos[i]) : (blobUrls[photoKeys[i]] ?? ''),
+          );
+          const safeIdx = photoCount > 0 ? Math.min(selectedPhotoIdx, photoCount - 1) : 0;
+          const mainSrc = photoSrcs[safeIdx] ?? '';
+          const hasItems = !room.usePreset && (room.analyzed || room.items.length > 0);
 
-        {/* Analyze / Cancel button */}
-        {room.analyzing ? (
-          <Button
-            danger
-            icon={<CloseOutlined />}
-            onClick={() => onCancelAnalyze(room.id)}
-            style={{
-              width: '100%',
-              marginBottom: room.analyzed || room.items.length > 0 ? 12 : 0,
-            }}
-          >
-            Cancel Analysis
-          </Button>
-        ) : (
-          <Button
-            type={room.analyzed ? 'default' : 'primary'}
-            icon={<ScanOutlined />}
-            disabled={room.photos.length === 0}
-            onClick={() => onAnalyze(room.id)}
-            style={{
-              width: '100%',
-              marginBottom: room.analyzed || room.items.length > 0 ? 12 : 0,
-              ...(room.analyzed ? {} : { background: colors.primary, borderColor: colors.primary }),
-            }}
-          >
-            {analysisFailed ? 'Retry Analysis' : room.analyzed ? 'Re-Analyze' : 'Analyze Room'}
-          </Button>
-        )}
-
-        {/* Detected items + field notes (collapsible together) */}
-        {(room.analyzed || room.items.length > 0) && (
-          <div>
-            {/* Toggle header */}
-            <div
-              onClick={() => setItemsCollapsed((v) => !v)}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: itemsCollapsed ? 0 : 6,
-                cursor: 'pointer',
-                userSelect: 'none',
-                padding: '4px 0',
-              }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && setItemsCollapsed((v) => !v)}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                {itemsCollapsed
-                  ? <RightOutlined style={{ fontSize: 10, color: colors.textMuted }} />
-                  : <DownOutlined style={{ fontSize: 10, color: colors.textMuted }} />
-                }
-                <Text style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary, fontFamily: fonts.body }}>
-                  Detected Items ({room.items.length})
-                </Text>
-              </div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                {totalLaborHours > 0 && (
-                  <Tag color="blue" style={{ fontSize: 11, margin: 0 }}>{totalLaborHours.toFixed(1)}h labor</Tag>
-                )}
-                {fragileCount > 0 && (
-                  <Tag color="red" style={{ fontSize: 11, margin: 0 }}>{fragileCount} fragile</Tag>
-                )}
-              </div>
-            </div>
-
-            {/* Collapsible content */}
-            {!itemsCollapsed && (
-              <>
-                {/* Field notes */}
-                {room.field_notes.length > 0 && (
-                  <div style={{ marginBottom: 10, padding: '8px 10px', background: '#fffbeb', borderRadius: borderRadius.base, border: `1px solid #fde68a` }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: '#92400e', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <ExclamationCircleOutlined /> Field Notes
-                    </div>
-                    {room.field_notes.map((note, i) => (
-                      <div key={i} style={{ fontSize: 11, color: '#78350f', marginBottom: 2 }}>- {note}</div>
-                    ))}
-                  </div>
-                )}
-                {room.items.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '12px 0', color: colors.textMuted, fontSize: 12 }}>
-                    No items detected. Try re-analyzing or add items manually.
-                  </div>
-                ) : (
-                  <div style={{ border: `1px solid ${colors.border}`, borderRadius: borderRadius.base, overflow: 'hidden', marginBottom: 8 }}>
-                    <div
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 100px 52px 60px',
-                        gap: 4,
-                        padding: '4px 6px',
-                        background: colors.bgLight,
-                        borderBottom: `1px solid ${colors.border}`,
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: colors.textSecondary,
-                        fontFamily: fonts.body,
-                      }}
-                    >
-                      <span>Name</span>
-                      <span>Category</span>
-                      <span style={{ textAlign: 'center' }}>Qty</span>
-                      <span />
-                    </div>
-                    {room.items.map((item, idx) => (
-                      <ItemRow
-                        key={idx}
-                        item={item}
-                        roomId={room.id}
-                        itemIndex={idx}
-                        editingCell={editingCell}
-                        onStartEdit={onStartEdit}
-                        onCommitEdit={onCommitEdit}
-                        onCancelEdit={onCancelEdit}
-                        onDelete={() => onDeleteItem(room.id, idx)}
-                      />
-                    ))}
-                  </div>
-                )}
-
-                <Button
-                  type="dashed"
-                  icon={<PlusOutlined />}
-                  size="small"
-                  onClick={() => onAddItem(room.id)}
-                  style={{ width: '100%', fontSize: 12, marginBottom: 8 }}
+          // ── Photo column content ──
+          const photoColumn = (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {/* Main photo preview (inline, not modal) */}
+              {photoCount > 0 && !isNarrow && (
+                <div
+                  style={{
+                    width: '100%',
+                    aspectRatio: '4/3',
+                    borderRadius: borderRadius.md,
+                    overflow: 'hidden',
+                    border: `1px solid ${colors.border}`,
+                    background: '#f5f5f5',
+                    position: 'relative',
+                  }}
                 >
-                  Add Item Manually
-                </Button>
-              </>
-            )}
-          </div>
-        )}
+                  {mainSrc ? (
+                    <img
+                      src={mainSrc}
+                      alt={`Photo ${(selectedPhotoIdx || 0) + 1}`}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                    />
+                  ) : (
+                    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: colors.bgLight, gap: 4 }}>
+                      {failedKeys.has(photoKeys[safeIdx]) ? (
+                        <>
+                          <CameraOutlined style={{ fontSize: 24, color: colors.textMuted }} />
+                          <span style={{ fontSize: 11, color: colors.textMuted }}>Photo unavailable</span>
+                        </>
+                      ) : (
+                        <>
+                          <LoadingOutlined style={{ fontSize: 24, color: colors.textMuted }} />
+                          <span style={{ fontSize: 11, color: colors.textMuted }}>Loading...</span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {/* Nav arrows */}
+                  {photoCount > 1 && (
+                    <>
+                      <button
+                        onClick={() => setSelectedPhotoIdx((p) => (p - 1 + photoCount) % photoCount)}
+                        style={{
+                          position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)',
+                          width: 24, height: 24, borderRadius: '50%', border: 'none',
+                          background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: 14,
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        ‹
+                      </button>
+                      <button
+                        onClick={() => setSelectedPhotoIdx((p) => (p + 1) % photoCount)}
+                        style={{
+                          position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
+                          width: 24, height: 24, borderRadius: '50%', border: 'none',
+                          background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: 14,
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}
+                      >
+                        ›
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
 
-        {/* Room size badge */}
-        {room.room_size && (
-          <div style={{ marginTop: 8, marginBottom: 8 }}>
-            <Tag color="default" style={{ fontSize: 11 }}>{room.room_size}</Tag>
-          </div>
-        )}
+              {/* Thumbnails strip */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                {photoSrcs.map((src, i) => (
+                  <div
+                    key={i}
+                    onClick={() => {
+                      setSelectedPhotoIdx(i);
+                    }}
+                    style={{
+                      position: 'relative',
+                      width: isNarrow ? 56 : 44,
+                      height: isNarrow ? 56 : 44,
+                      borderRadius: borderRadius.sm,
+                      overflow: 'hidden',
+                      border: `2px solid ${i === selectedPhotoIdx && !isNarrow ? colors.primary : colors.border}`,
+                      flexShrink: 0,
+                      cursor: 'pointer',
+                      opacity: i === selectedPhotoIdx && !isNarrow ? 1 : 0.75,
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {src ? (
+                      <img
+                        src={src}
+                        alt={`Thumb ${i + 1}`}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: colors.bgLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <CameraOutlined style={{ fontSize: 14, color: colors.textMuted }} />
+                      </div>
+                    )}
+                    {!room.analyzing && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onRemovePhoto(room.id, i); }}
+                        style={{
+                          position: 'absolute', top: 1, right: 1,
+                          width: 14, height: 14, borderRadius: '50%', border: 'none',
+                          background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 9,
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          padding: 0, lineHeight: 1, zIndex: 10,
+                        }}
+                        aria-label="Remove photo"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {!room.analyzing && (
+                  <div
+                    onClick={() => {
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.accept = 'image/*';
+                      input.multiple = true;
+                      input.onchange = () => {
+                        if (input.files && input.files.length > 0) onAddPhoto(room.id, input.files);
+                      };
+                      input.click();
+                    }}
+                    style={{
+                      width: isNarrow ? 56 : 44,
+                      height: isNarrow ? 56 : 44,
+                      borderRadius: borderRadius.sm,
+                      border: `1px dashed ${colors.border}`,
+                      display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', background: colors.bgLight,
+                      flexShrink: 0, gap: 1,
+                    }}
+                  >
+                    <PlusOutlined style={{ fontSize: 12, color: colors.textMuted }} />
+                    <span style={{ fontSize: 9, color: colors.textMuted }}>Photo</span>
+                  </div>
+                )}
+                <span style={{ fontSize: 11, color: colors.textMuted, fontFamily: fonts.body }}>
+                  {photoCount > 0 ? `${photoCount} photo${photoCount !== 1 ? 's' : ''}` : '0 photos'}
+                </span>
+              </div>
 
-        {/* Special Items - hidden in Photo AI mode (items detected from photos) */}
+              {/* Analyze / Cancel button */}
+              {!room.usePreset && (
+                room.analyzing ? (
+                  <Button danger icon={<CloseOutlined />} onClick={() => onCancelAnalyze(room.id)} style={{ width: '100%' }}>
+                    Cancel Analysis
+                  </Button>
+                ) : (
+                  <Button
+                    type={room.analyzed ? 'default' : 'primary'}
+                    icon={<ScanOutlined />}
+                    disabled={photoCount === 0 && !room.analyzed}
+                    onClick={() => onAnalyze(room.id)}
+                    style={{ width: '100%', ...(room.analyzed ? {} : { background: colors.primary, borderColor: colors.primary }) }}
+                  >
+                    {analysisFailed ? 'Retry Analysis' : room.analyzed ? 'Re-Analyze' : 'Analyze Room'}
+                  </Button>
+                )
+              )}
+
+              {/* Switch mode button */}
+              <Button
+                type="text" size="small" icon={<SwapOutlined />}
+                onClick={handleTogglePresetMode} disabled={room.analyzing}
+                style={{ fontSize: 12, color: colors.textMuted, fontFamily: fonts.body, padding: '2px 8px', height: 'auto' }}
+              >
+                {room.usePreset ? 'Switch to AI Analysis' : 'Use Preset Instead'}
+              </Button>
+            </div>
+          );
+
+          // ── Items / Preset column content ──
+          const itemsColumn = (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {/* Preset mode content */}
+              {room.usePreset && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ marginBottom: 10 }}>
+                    <span style={{ fontSize: 12, color: colors.textMuted, fontFamily: fonts.body, display: 'block', marginBottom: 4 }}>Room Preset</span>
+                    <Select placeholder="Select a room preset" value={room.preset} onChange={handlePresetSelect} style={{ width: '100%' }} showSearch optionFilterProp="label" size="middle">
+                      {Object.entries(presets).map(([category, list]) => (
+                        <Select.OptGroup key={category} label={`${PRESET_CATEGORY_ICONS[category] ?? ''} ${category}`}>
+                          {list.map((p) => (<Option key={p.key} value={p.key} label={p.name}>{p.name}</Option>))}
+                        </Select.OptGroup>
+                      ))}
+                    </Select>
+                  </div>
+                  {room.preset && (
+                    <div>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary, fontFamily: fonts.body, display: 'block', marginBottom: 8 }}>
+                        Content Hints
+                        {room.hints.length > 0 && (
+                          <Tag style={{ marginLeft: 6, fontSize: 11, border: 'none', background: colors.primary + '15', color: colors.primary, borderRadius: borderRadius.full, fontWeight: 700 }}>{room.hints.length}</Tag>
+                        )}
+                      </span>
+                      {Object.entries(HINT_CATEGORIES).map(([cat, items]) => (
+                        <div key={cat} style={{ marginBottom: 10 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>{cat}</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {items.map((hint) => {
+                              const active = room.hints.includes(hint.key);
+                              const isUnit = UNIT_HINTS.has(hint.key);
+                              const isVolume = !isUnit && hint.key in HINT_VOLUME_LEVELS;
+                              const volLevels = HINT_VOLUME_LEVELS[hint.key];
+                              const currentQty = room.hint_qty?.[hint.key] ?? 1;
+                              const currentVolIdx = room.hint_volume?.[hint.key] ?? 1;
+                              const currentVol = volLevels?.[currentVolIdx];
+                              const hintExpandKey = `${room.id}:${hint.key}`;
+                              const isExpanded = expandedHintKey === hintExpandKey;
+                              const currentQtyLabel = QTY_CHIPS.find((c) => c.value === currentQty)?.label ?? String(currentQty);
+                              return (
+                                <div key={hint.key} style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                                  <button role="checkbox" aria-checked={active} onClick={() => handleToggleHint(hint.key)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: borderRadius.full, border: `1.5px solid ${active ? colors.primary : colors.border}`, background: active ? colors.primary : colors.bgWhite, color: active ? '#fff' : colors.textSecondary, fontFamily: fonts.body, fontSize: 12, fontWeight: active ? 600 : 400, cursor: 'pointer', transition: 'all 0.15s ease', userSelect: 'none', lineHeight: 1.4, flexShrink: 0 }}>
+                                    <span style={{ fontSize: 13, lineHeight: 1 }}>{hint.icon}</span>{hint.label}
+                                  </button>
+                                  {active && isUnit && !isExpanded && (
+                                    <Tooltip title="Click to change quantity"><button onClick={() => setExpandedHintKey(hintExpandKey)} style={{ minWidth: 22, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: borderRadius.sm, border: `1.5px solid ${colors.primary}`, background: colors.primary + '12', color: colors.primary, fontSize: 11, fontWeight: 700, fontFamily: fonts.body, cursor: 'pointer', padding: '0 5px' }}>x{currentQtyLabel}</button></Tooltip>
+                                  )}
+                                  {active && isUnit && isExpanded && (
+                                    <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                                      {QTY_CHIPS.map((chip) => { const selected = currentQty === chip.value; return (<button key={chip.value} onClick={() => { handleHintQty(hint.key, chip.value); setExpandedHintKey(null); }} style={{ width: 26, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: borderRadius.sm, border: `1.5px solid ${selected ? colors.primary : colors.border}`, background: selected ? colors.primary : colors.bgWhite, color: selected ? '#fff' : colors.textSecondary, fontSize: 11, fontWeight: selected ? 700 : 400, fontFamily: fonts.body, cursor: 'pointer', transition: 'all 0.12s ease', padding: 0 }}>{chip.label}</button>); })}
+                                    </div>
+                                  )}
+                                  {active && isVolume && volLevels && !isExpanded && (
+                                    <Tooltip title={currentVol ? `${currentVol.label} (${currentVol.hint}) - Click to change` : 'Click to change'}><button onClick={() => setExpandedHintKey(hintExpandKey)} style={{ minWidth: 22, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: borderRadius.sm, border: `1.5px solid ${colors.primary}`, background: colors.primary + '12', color: colors.primary, fontSize: 10, fontWeight: 700, fontFamily: fonts.body, cursor: 'pointer', padding: '0 5px' }}>{currentVol?.key ?? 'M'}</button></Tooltip>
+                                  )}
+                                  {active && isVolume && volLevels && isExpanded && (
+                                    <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                                      {volLevels.map((lvl, lvlIdx) => { const selected = currentVolIdx === lvlIdx; return (<Tooltip key={lvl.key} title={`${lvl.label} (${lvl.hint})`}><button onClick={() => { handleHintVolume(hint.key, lvlIdx); setExpandedHintKey(null); }} style={{ minWidth: 26, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: borderRadius.sm, border: `1.5px solid ${selected ? colors.primary : colors.border}`, background: selected ? colors.primary : colors.bgWhite, color: selected ? '#fff' : colors.textSecondary, fontSize: 10, fontWeight: selected ? 700 : 400, fontFamily: fonts.body, cursor: 'pointer', transition: 'all 0.12s ease', padding: '0 4px' }}>{lvl.key}</button></Tooltip>); })}
+                                      {currentVol && (<span style={{ fontSize: 10, color: colors.textMuted, marginLeft: 2, whiteSpace: 'nowrap' }}>{currentVol.label} · {currentVol.hint}</span>)}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Detected items + field notes — AI mode only */}
+              {hasItems && (
+                <div>
+                  <div onClick={() => setItemsCollapsed((v) => !v)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: itemsCollapsed ? 0 : 6, cursor: 'pointer', userSelect: 'none', padding: '4px 0' }} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setItemsCollapsed((v) => !v)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {itemsCollapsed ? <RightOutlined style={{ fontSize: 10, color: colors.textMuted }} /> : <DownOutlined style={{ fontSize: 10, color: colors.textMuted }} />}
+                      <Text style={{ fontSize: 12, fontWeight: 600, color: colors.textSecondary, fontFamily: fonts.body }}>Detected Items ({room.items.length})</Text>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {totalLaborHours > 0 && <Tag color="blue" style={{ fontSize: 11, margin: 0 }}>{totalLaborHours.toFixed(1)}h labor</Tag>}
+                      {fragileCount > 0 && <Tag color="red" style={{ fontSize: 11, margin: 0 }}>{fragileCount} fragile</Tag>}
+                    </div>
+                  </div>
+                  {!itemsCollapsed && (
+                    <>
+                      {room.field_notes.length > 0 && (
+                        <div style={{ marginBottom: 10, padding: '8px 10px', background: '#fffbeb', borderRadius: borderRadius.base, border: '1px solid #fde68a' }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#92400e', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}><ExclamationCircleOutlined /> Field Notes</div>
+                          {room.field_notes.map((note, i) => (<div key={i} style={{ fontSize: 11, color: '#78350f', marginBottom: 2 }}>- {note}</div>))}
+                        </div>
+                      )}
+                      {room.items.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '12px 0', color: colors.textMuted, fontSize: 12 }}>No items detected. Try re-analyzing or add items manually.</div>
+                      ) : (
+                        <div style={{ border: `1px solid ${colors.border}`, borderRadius: borderRadius.base, overflow: 'hidden', marginBottom: 8 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 40px 36px', gap: 4, padding: '4px 6px', background: colors.bgLight, borderBottom: `1px solid ${colors.border}`, fontSize: 11, fontWeight: 600, color: colors.textSecondary, fontFamily: fonts.body }}>
+                            <span>Name</span><span>Category</span><span style={{ textAlign: 'center' }}>Qty</span><span />
+                          </div>
+                          {room.items.map((item, idx) => (
+                            <ItemRow key={idx} item={item} roomId={room.id} itemIndex={idx} editingCell={editingCell} onStartEdit={onStartEdit} onCommitEdit={onCommitEdit} onCancelEdit={onCancelEdit} onDelete={() => onDeleteItem(room.id, idx)} />
+                          ))}
+                        </div>
+                      )}
+                      <Button type="dashed" icon={<PlusOutlined />} size="small" onClick={() => onAddItem(room.id)} style={{ width: '100%', fontSize: 12, marginBottom: 8 }}>Add Item Manually</Button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {room.room_size && (
+                <div style={{ marginTop: 4 }}><Tag color="default" style={{ fontSize: 11 }}>{room.room_size}</Tag></div>
+              )}
+            </div>
+          );
+
+          // ── Render: 2-column on desktop, stacked on mobile ──
+          return isNarrow ? (
+            <div>
+              {photoColumn}
+              <div style={{ marginTop: 12 }}>{itemsColumn}</div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+              <div style={{ width: 380, flexShrink: 0 }}>{photoColumn}</div>
+              {itemsColumn}
+            </div>
+          );
+        })()}
       </div>
     </Card>
   );
@@ -1094,7 +1383,7 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
   });
   const batchAbortRef = useRef<{ abort: () => void } | null>(null);
 
-  const analyzedRooms = photoRooms.filter((r) => r.analyzed);
+  const analyzedRooms = photoRooms.filter((r) => r.analyzed || (r.usePreset && r.preset));
   const canGenerate = analyzedRooms.length > 0 && !generatingEstimate;
 
   // ── Room mutation helpers ──────────────────────────────────────────────
@@ -1115,6 +1404,14 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
   const addRoom = useCallback(
     (room: PhotoRoom) => {
       setPhotoRooms((prev) => [room, ...prev]);
+      // Upload photos to storage in background
+      if (room.photos.length > 0) {
+        packingApi.uploadPhotos(room.photos).then((keys) => {
+          setPhotoRooms((prev) =>
+            prev.map((r) => r.id === room.id ? { ...r, photo_keys: keys } : r),
+          );
+        }).catch(() => {});
+      }
     },
     [setPhotoRooms],
   );
@@ -1126,8 +1423,19 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
       if (fileArray.length === 0) return;
       try {
         const base64List = await Promise.all(fileArray.map(fileToBase64));
+        const room = photoRooms.find((r) => r.id === roomId);
+
+        // Upload to storage in background, then store keys
+        packingApi.uploadPhotos(base64List).then((keys) => {
+          updateRoom(roomId, {
+            photo_keys: [...(room?.photo_keys ?? []), ...keys],
+          });
+        }).catch(() => {
+          // Non-fatal: photos still work in-memory for current session
+        });
+
         updateRoom(roomId, {
-          photos: [...(photoRooms.find((r) => r.id === roomId)?.photos ?? []), ...base64List],
+          photos: [...(room?.photos ?? []), ...base64List],
         });
       } catch {
         message.error('Failed to process image files.');
@@ -1140,7 +1448,13 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
     (roomId: string, index: number) => {
       setPhotoRooms((prev) =>
         prev.map((r) =>
-          r.id === roomId ? { ...r, photos: r.photos.filter((_, i) => i !== index) } : r,
+          r.id === roomId
+            ? {
+                ...r,
+                photos: r.photos.filter((_, i) => i !== index),
+                photo_keys: (r.photo_keys ?? []).filter((_, i) => i !== index),
+              }
+            : r,
         ),
       );
     },
@@ -1154,8 +1468,10 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
   const handleAnalyze = useCallback(
     async (roomId: string) => {
       const room = photoRooms.find((r) => r.id === roomId);
-      console.log('[PhotoAI] handleAnalyze called', { roomId, found: !!room, photoCount: room?.photos.length });
-      if (!room || room.photos.length === 0) return;
+      const photoKeys = room?.photo_keys ?? [];
+      const hasPhotos = (room?.photos?.length ?? 0) > 0 || photoKeys.length > 0;
+      console.log('[PhotoAI] handleAnalyze called', { roomId, found: !!room, photoCount: room?.photos.length, photoKeys: photoKeys.length });
+      if (!room || !hasPhotos) return;
 
       // Create AbortController for this room
       const controller = new AbortController();
@@ -1163,11 +1479,20 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
 
       updateRoom(roomId, { analyzing: true });
       try {
-        console.log('[PhotoAI] Sending analyze request...', { room_name: room.room_name, images: room.photos.length });
+        // If no in-memory base64 but have storage keys, fetch from storage
+        let images = room.photos;
+        if (images.length === 0 && photoKeys.length > 0) {
+          console.log('[PhotoAI] Fetching photos from storage...', { keys: photoKeys.length });
+          images = await Promise.all(photoKeys.map((key) => packingApi.fetchPhotoBase64(key)));
+          // Cache in memory for subsequent operations
+          updateRoom(roomId, { photos: images });
+        }
+
+        console.log('[PhotoAI] Sending analyze request...', { room_name: room.room_name, images: images.length });
         const result = await packingApi.analyzeRoom(
           {
             room_name: room.room_name,
-            images: room.photos,
+            images,
             existing_items: room.items.map((i) => ({ name: i.name, quantity: i.quantity })),
           },
           controller.signal,
@@ -1223,18 +1548,28 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
   const handleBulkAddRooms = useCallback(
     (newRooms: PhotoRoom[]) => {
       setPhotoRooms((prev) => [...newRooms, ...prev]);
+      // Upload all room photos to storage in background
+      for (const room of newRooms) {
+        if (room.photos.length > 0) {
+          packingApi.uploadPhotos(room.photos).then((keys) => {
+            setPhotoRooms((prev) =>
+              prev.map((r) => r.id === room.id ? { ...r, photo_keys: keys } : r),
+            );
+          }).catch(() => {});
+        }
+      }
     },
     [setPhotoRooms],
   );
 
   // ── Batch Analysis (SSE) ────────────────────────────────────────────
   const unanalyzedWithPhotos = photoRooms.filter(
-    (r) => !r.analyzed && r.photos.length > 0 && !r.analyzing,
+    (r) => !r.analyzed && !r.usePreset && r.photos.length > 0 && !r.analyzing,
   );
 
   const handleBatchAnalyze = useCallback(() => {
     const rooms = photoRooms.filter(
-      (r) => !r.analyzed && r.photos.length > 0,
+      (r) => !r.analyzed && !r.usePreset && r.photos.length > 0,
     );
     if (rooms.length === 0) {
       message.warning('No unanalyzed rooms with photos.');
@@ -1362,6 +1697,9 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
           const items = r.items.map((item, i) => {
             if (i !== itemIndex) return item;
             if (field === 'name') return { ...item, name: String(value) };
+            if (field === 'description') return { ...item, description: String(value) || undefined };
+            if (field === 'size') return { ...item, size: String(value) as any };
+            if (field === 'weight') return { ...item, weight: String(value) as any };
             if (field === 'category') return { ...item, category: String(value) };
             if (field === 'quantity') return { ...item, quantity: Number(value) };
             return item;
@@ -1416,12 +1754,18 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
         rooms: analyzedRooms.map((r) => ({
           room_name: r.room_name,
           preset_id: r.preset_id,
-          items: r.items,
+          items: r.usePreset ? [] : r.items,
           density: r.density,
           floor: r.floor,
           contamination: r.contamination,
           special_items: r.special_items,
           custom_special_items: r.custom_special_items,
+          // Preset fallback fields
+          use_preset: r.usePreset,
+          preset: r.preset,
+          hints: r.hints,
+          hint_volume: r.hint_volume,
+          hint_qty: r.hint_qty,
         })),
         crew_size: settings.crew_size,
         storage_months: settings.storage_months,
@@ -1429,6 +1773,7 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
         include_packback: settings.include_packback,
         include_op: settings.include_op,
         op_rate: settings.op_rate,
+        material_rate: settings.material_rate ?? 25,
         include_contingency: false,
         contingency_rate: 0,
         region: settings.region,
@@ -1631,6 +1976,7 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
             <RoomCard
               key={room.id}
               room={room}
+              presets={presets}
               editingCell={editingCell}
               onUpdate={updateRoom}
               onDelete={deleteRoom}
@@ -1799,7 +2145,7 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
                       color: colors.textPrimary,
                     }}
                   >
-                    {room.room_name} {'\u00B7'} {room.floor} floor{room.density !== 'normal' ? ` \u00B7 ${room.density}` : ''}
+                    {room.room_name} {'\u00B7'} {room.floor} floor{room.density !== 'normal' ? ` \u00B7 ${room.density}` : ''}{room.usePreset ? ' \u00B7 Preset' : ''}
                   </Tag>
                 ))}
               </div>
@@ -1911,7 +2257,7 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
 
         {isNarrow && <Divider />}
 
-        {/* Review & Generate - right side (sticky on desktop) */}
+        {/* Settings + Review & Generate - right side (sticky on desktop) */}
         <div
           style={{
             width: isNarrow ? '100%' : 380,
@@ -1920,7 +2266,18 @@ export const PhotoAITab: React.FC<PhotoAITabProps> = ({
             top: isNarrow ? undefined : 60,
           }}
         >
-          {renderStepReview()}
+          <SharedDetailsStep
+            settings={settings}
+            setSettings={setSettings}
+            clientInfo={clientInfo}
+            setClientInfo={setClientInfo}
+            companyOverride={companyOverride}
+            setCompanyOverride={setCompanyOverride}
+            compact
+          />
+          <div style={{ marginTop: 20 }}>
+            {renderStepReview()}
+          </div>
         </div>
       </div>
     );

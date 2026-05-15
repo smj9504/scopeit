@@ -10,6 +10,7 @@ import type {
   MasterContentResponse,
   CorrectionsRequest,
   CompanyInfoOverride,
+  SavedCompanyProfile,
   BatchRoomEvent,
   BatchCompleteEvent,
   ReportExportRequest,
@@ -43,7 +44,7 @@ export const packingApi = {
   },
 
   updatePrice: async (id: string, data: Partial<MovingPrice>): Promise<MovingPrice> => {
-    const response = await api.patch<MovingPrice>(`/line-items/${id}`, data);
+    const response = await api.put<MovingPrice>(`/line-items/${id}`, data);
     return response.data;
   },
 
@@ -122,6 +123,65 @@ export const packingApi = {
       { responseType: 'blob', timeout: 120_000 },
     );
     return response.data;
+  },
+
+  // ── Address Autocomplete ────────────────────────────────────────────
+  addressAutocomplete: async (query: string): Promise<{ address: string; street: string; city: string; state: string; zip: string }[]> => {
+    if (query.trim().length < 3) return [];
+    const response = await api.get('/tools/packing/address-autocomplete', { params: { q: query } });
+    return response.data;
+  },
+
+  // ── Company Profiles ────────────────────────────────────────────────
+  getCompanyProfiles: async (): Promise<SavedCompanyProfile[]> => {
+    const response = await api.get<SavedCompanyProfile[]>('/tools/packing/company-profiles');
+    return response.data;
+  },
+
+  saveCompanyProfile: async (label: string, data: CompanyInfoOverride): Promise<SavedCompanyProfile> => {
+    const response = await api.post<SavedCompanyProfile>('/tools/packing/company-profiles', { label, data });
+    return response.data;
+  },
+
+  deleteCompanyProfile: async (profileId: string): Promise<void> => {
+    await api.delete(`/tools/packing/company-profiles/${profileId}`);
+  },
+
+  // ── Photo Storage ───────────────────────────────────────────────────
+  uploadPhotos: async (images: string[]): Promise<string[]> => {
+    const response = await api.post<{ photo_keys: string[] }>(
+      '/tools/packing/photos/upload',
+      { images },
+      { timeout: 120_000 },
+    );
+    return response.data.photo_keys;
+  },
+
+  getPhotoUrl: (key: string): string => {
+    const token = useAuthStore.getState().accessToken;
+    const base = `${API_URL}/tools/packing/photos/${key}`;
+    return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+  },
+
+  /** Fetch a photo as blob URL (authenticated). Use for <img src>. */
+  fetchPhotoBlobUrl: async (key: string): Promise<string> => {
+    const token = useAuthStore.getState().accessToken;
+    const resp = await fetch(`${API_URL}/tools/packing/photos/${key}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!resp.ok) throw new Error(`Photo fetch failed: ${resp.status}`);
+    const blob = await resp.blob();
+    return URL.createObjectURL(blob);
+  },
+
+  fetchPhotoBase64: async (key: string): Promise<string> => {
+    const response = await api.get(`/tools/packing/photos/${key}`, {
+      responseType: 'arraybuffer',
+    });
+    const bytes = new Uint8Array(response.data);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
   },
 
   // ── Batch Photo Analysis (SSE) ──────────────────────────────────────

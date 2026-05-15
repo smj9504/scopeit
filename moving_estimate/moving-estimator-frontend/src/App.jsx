@@ -480,6 +480,69 @@ function generateLineItems(estimate) {
     hasAppliance = categories.has('Appliances');
   }
 
+  // Compute material estimates locally — fallback when backend returns sparse/incomplete materials dict
+  const CATEGORY_MATS = {
+    'Furniture':   { blanket: 2, shrink_wrap: 1 },
+    'Appliances':  { blanket: 1, shrink_wrap: 1 },
+    'Electronics': { box_medium: 0.5 },
+    'Kitchenware': { box_dish: 0.125 },
+    'Fragile':     { box_dish: 0.167 },
+    'Books':       { box_small: 0.05 },
+    'Artwork':     { box_dish: 1 },
+    'Clothing':    { box_medium: 0.1 },
+    'Tools':       { box_small: 0.067 },
+    'Sports':      { box_large: 0.2 },
+  };
+  const computedMaterials = {};
+  if (aiRooms.length > 0) {
+    // Photo AI path: compute from detected item categories
+    const allItems = aiRooms.flatMap(r => r.items || []);
+    for (const item of allItems) {
+      const qty = item.quantity || 1;
+      const mats = CATEGORY_MATS[item.category] || {};
+      for (const [matKey, perItem] of Object.entries(mats)) {
+        computedMaterials[matKey] = (computedMaterials[matKey] || 0) + qty * perItem;
+      }
+    }
+    for (const key of Object.keys(computedMaterials)) {
+      computedMaterials[key] = Math.max(1, Math.ceil(computedMaterials[key]));
+    }
+  } else if (selectedRooms.length > 0) {
+    // Quick Estimate path: compute from room hints using existing data tables
+    for (const room of selectedRooms) {
+      const volScale = MAT_SCALE_PER_SIZE[room.size || 'large'] || 80;
+      const densityMult = DENSITY_MULT[room.density || 'normal'] || 1.0;
+      const roomHintQty = room.hintQty || {};
+      const roomHintVolume = room.hintVolume || {};
+      for (const hint of (room.hints || [])) {
+        // Unit-based hints (furniture pieces, appliances, etc.)
+        if (HINT_UNIT_MATERIALS[hint]) {
+          const qty = roomHintQty[hint] || 1;
+          for (const [matKey, perUnit] of Object.entries(HINT_UNIT_MATERIALS[hint])) {
+            computedMaterials[matKey] = (computedMaterials[matKey] || 0) + qty * perUnit;
+          }
+        }
+        // Volume-scaled hints (kitchenware, books, clothing, etc.)
+        const hintDef = CONTENT_HINTS[hint];
+        if (hintDef && Object.keys(hintDef.materials).length > 0) {
+          const volIdx = roomHintVolume[hint] ?? 1; // default M
+          const volMult = HINT_VOLUME_LEVELS[hint]?.[volIdx]?.mult ?? 1.0;
+          for (const [matKey, factor] of Object.entries(hintDef.materials)) {
+            computedMaterials[matKey] = (computedMaterials[matKey] || 0) + volScale * densityMult * volMult * factor;
+          }
+        }
+      }
+    }
+    for (const key of Object.keys(computedMaterials)) {
+      computedMaterials[key] = Math.max(1, Math.ceil(computedMaterials[key]));
+    }
+  }
+  // Effective materials: prefer backend-provided values (> 0), fall back to computed
+  const effectiveMaterials = { ...computedMaterials };
+  for (const [key, val] of Object.entries(materials)) {
+    if (val > 0) effectiveMaterials[key] = val;
+  }
+
   // Build dynamic description context from AI-detected or hint-based rooms
   const ctx = (() => {
     const notable = [], highValue = [], categories = new Set(), roomNames = [];
@@ -587,17 +650,17 @@ function generateLineItems(estimate) {
       id: 'materials',
       title: 'PACKING MATERIALS & SUPPLIES',
       items: [
-        materials.box_small > 0 && { id: generateId(), name: 'Small Cartons (1.5 Cu Ft)', detail: matDetail('box_small', 'Books, small decor, electronics'), qty: materials.box_small, unit: 'EA', price: DEFAULT_PRICES.box_small },
-        materials.box_medium > 0 && { id: generateId(), name: 'Medium Cartons (3.0 Cu Ft)', detail: matDetail('box_medium', 'General household, consumables'), qty: materials.box_medium, unit: 'EA', price: DEFAULT_PRICES.box_medium },
-        materials.box_large > 0 && { id: generateId(), name: 'Large Cartons (4.5 Cu Ft)', detail: matDetail('box_large', 'Soft goods, light bulky items'), qty: materials.box_large, unit: 'EA', price: DEFAULT_PRICES.box_large },
-        materials.box_dish > 0 && { id: generateId(), name: 'Dish-Pack / Reinforced Cartons', detail: matDetail('box_dish', 'Frames, fragile decor, glass'), qty: materials.box_dish, unit: 'EA', price: DEFAULT_PRICES.box_dish },
-        materials.box_wardrobe > 0 && { id: generateId(), name: 'Wardrobe Boxes', detail: matDetail('box_wardrobe', 'Hanging garments'), qty: materials.box_wardrobe, unit: 'EA', price: DEFAULT_PRICES.box_wardrobe },
-        materials.blanket > 0 && { id: generateId(), name: 'Heavy-Duty Moving Pads (72" × 80")', detail: matDetail('blanket', 'Furniture wrapping'), qty: materials.blanket, unit: 'EA', price: DEFAULT_PRICES.blanket },
-        materials.furniture_pad > 0 && { id: generateId(), name: 'Heavyweight Furniture Pad', detail: matDetail('furniture_pad', 'Heavy furniture protection'), qty: materials.furniture_pad, unit: 'EA', price: DEFAULT_PRICES.furniture_pad },
-        materials.chair_cover > 0 && { id: generateId(), name: 'Plastic Chair Cover & Tape', detail: matDetail('chair_cover', 'Chair protection'), qty: materials.chair_cover, unit: 'EA', price: DEFAULT_PRICES.chair_cover },
-        materials.sofa_cover > 0 && { id: generateId(), name: 'Plastic Couch/Sofa Cover & Tape', detail: matDetail('sofa_cover', 'Sofa/couch protection'), qty: materials.sofa_cover, unit: 'EA', price: DEFAULT_PRICES.sofa_cover },
-        materials.shrink_wrap > 0 && { id: generateId(), name: '4-Mil Stretch Wrap Rolls', detail: matDetail('shrink_wrap', 'Furniture securing'), qty: materials.shrink_wrap, unit: 'RL', price: DEFAULT_PRICES.shrink_wrap },
-        { id: generateId(), name: 'Packing Paper — Bundle (50 lb)', detail: matDetail('packing_paper', 'Wrapping dishes, glassware, and fragile items'), qty: Math.max(1, materials.packing_paper || Math.ceil(rooms / 3)), unit: 'BN', price: DEFAULT_PRICES.packing_paper },
+        effectiveMaterials.box_small > 0 && { id: generateId(), name: 'Small Cartons (1.5 Cu Ft)', detail: matDetail('box_small', 'Books, small decor, electronics'), qty: effectiveMaterials.box_small, unit: 'EA', price: DEFAULT_PRICES.box_small },
+        effectiveMaterials.box_medium > 0 && { id: generateId(), name: 'Medium Cartons (3.0 Cu Ft)', detail: matDetail('box_medium', 'General household, consumables'), qty: effectiveMaterials.box_medium, unit: 'EA', price: DEFAULT_PRICES.box_medium },
+        effectiveMaterials.box_large > 0 && { id: generateId(), name: 'Large Cartons (4.5 Cu Ft)', detail: matDetail('box_large', 'Soft goods, light bulky items'), qty: effectiveMaterials.box_large, unit: 'EA', price: DEFAULT_PRICES.box_large },
+        effectiveMaterials.box_dish > 0 && { id: generateId(), name: 'Dish-Pack / Reinforced Cartons', detail: matDetail('box_dish', 'Frames, fragile decor, glass'), qty: effectiveMaterials.box_dish, unit: 'EA', price: DEFAULT_PRICES.box_dish },
+        effectiveMaterials.box_wardrobe > 0 && { id: generateId(), name: 'Wardrobe Boxes', detail: matDetail('box_wardrobe', 'Hanging garments'), qty: effectiveMaterials.box_wardrobe, unit: 'EA', price: DEFAULT_PRICES.box_wardrobe },
+        effectiveMaterials.blanket > 0 && { id: generateId(), name: 'Heavy-Duty Moving Pads (72" × 80")', detail: matDetail('blanket', 'Furniture wrapping'), qty: effectiveMaterials.blanket, unit: 'EA', price: DEFAULT_PRICES.blanket },
+        effectiveMaterials.furniture_pad > 0 && { id: generateId(), name: 'Heavyweight Furniture Pad', detail: matDetail('furniture_pad', 'Heavy furniture protection'), qty: effectiveMaterials.furniture_pad, unit: 'EA', price: DEFAULT_PRICES.furniture_pad },
+        effectiveMaterials.chair_cover > 0 && { id: generateId(), name: 'Plastic Chair Cover & Tape', detail: matDetail('chair_cover', 'Chair protection'), qty: effectiveMaterials.chair_cover, unit: 'EA', price: DEFAULT_PRICES.chair_cover },
+        effectiveMaterials.sofa_cover > 0 && { id: generateId(), name: 'Plastic Couch/Sofa Cover & Tape', detail: matDetail('sofa_cover', 'Sofa/couch protection'), qty: effectiveMaterials.sofa_cover, unit: 'EA', price: DEFAULT_PRICES.sofa_cover },
+        effectiveMaterials.shrink_wrap > 0 && { id: generateId(), name: '4-Mil Stretch Wrap Rolls', detail: matDetail('shrink_wrap', 'Furniture securing'), qty: effectiveMaterials.shrink_wrap, unit: 'RL', price: DEFAULT_PRICES.shrink_wrap },
+        { id: generateId(), name: 'Packing Paper — Bundle (50 lb)', detail: matDetail('packing_paper', 'Wrapping dishes, glassware, and fragile items'), qty: Math.max(1, effectiveMaterials.packing_paper || Math.ceil(rooms / 3)), unit: 'BN', price: DEFAULT_PRICES.packing_paper },
         { id: generateId(), name: 'Labeling Supplies — labels, markers, tags', detail: 'Room labels, markers, inventory tags', qty: Math.max(2, Math.ceil(rooms / 4)), unit: 'KT', price: 60.11 },
       ].filter(Boolean)
     },
@@ -1424,6 +1487,7 @@ function CompanyModal({ companyInfo, photoSettings, onSave, onClose }) {
 const ITEM_CATEGORIES = ['Furniture', 'Electronics', 'Books', 'Kitchenware', 'Clothing', 'Fragile', 'Artwork', 'Collectibles', 'Appliances', 'Tools', 'Sports', 'Other'];
 
 const PhotoAnalysisTab = memo(function PhotoAnalysisTab({ onEstimate, onError, apiConnected, initialRooms, onMounted, defaultRegion }) {
+  const [lightboxPhoto, setLightboxPhoto] = useState(null);
   const [rooms, setRooms] = useState(() => {
     if (initialRooms && initialRooms.length > 0) {
       return initialRooms.map(r => ({
@@ -1650,7 +1714,39 @@ const PhotoAnalysisTab = memo(function PhotoAnalysisTab({ onEstimate, onError, a
         aiRooms: roomsWithItems, fromPhotoAI: true,
         propertyAddress,
       });
-    } catch (err) { onError?.(err.message); }
+    } catch (err) {
+      // Network error (backend offline) → generate estimate locally from AI-detected rooms
+      const isNetworkError = err instanceof TypeError || err.message === 'Failed to fetch' || err.message.includes('NetworkError') || err.message.includes('fetch');
+      if (isNetworkError && roomsWithItems.length > 0) {
+        const allItems = roomsWithItems.flatMap(r => r.items || []);
+        const totalQty = allItems.reduce((s, i) => s + (i.quantity || 1), 0);
+        const estHours = Math.max(4, Math.round(totalQty * 0.3 * 10) / 10);
+        const numRooms = roomsWithItems.length;
+        const recCrew = numRooms <= 2 ? 2 : numRooms <= 4 ? 3 : numRooms <= 7 ? 4 : 5;
+        setEstimateHours(estHours);
+        onEstimate?.({
+          rooms: numRooms,
+          items: totalQty,
+          hours: estHours,
+          crew: crewSize || recCrew,
+          materials: {},
+          materials_detail: {},
+          sections: {},
+          section_details: {},
+          subtotal: 0, total: 0,
+          includeOP: true, opRate: 20,
+          includeContingency: false, contingencyRate: 0,
+          supplements: [],
+          storageSf: snapToStorageUnit(Math.max(25, Math.ceil(totalQty * 2))),
+          storageMonths: isOnSite ? 0 : storageMonths,
+          stagingType,
+          aiRooms: roomsWithItems, fromPhotoAI: true,
+          propertyAddress,
+        });
+      } else {
+        onError?.(err.message);
+      }
+    }
     finally { setGenerating(false); }
   }, [rooms, crewSize, storageMonths, includePackback, onEstimate, onError, propertyAddress, stagingType, isOnSite]);
 
@@ -1671,6 +1767,23 @@ const PhotoAnalysisTab = memo(function PhotoAnalysisTab({ onEstimate, onError, a
 
   return (
     <div className="space-y-6">
+      {/* Photo Lightbox */}
+      {lightboxPhoto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setLightboxPhoto(null)}>
+          <button className="absolute top-4 right-4 text-white p-2 hover:bg-white/10 rounded-full transition-colors"
+            onClick={() => setLightboxPhoto(null)}>
+            <X size={24} />
+          </button>
+          <div className="max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-2"
+            onClick={e => e.stopPropagation()}>
+            <img src={lightboxPhoto.preview} alt={lightboxPhoto.name}
+              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+            <span className="text-white/70 text-sm">{lightboxPhoto.name}</span>
+          </div>
+        </div>
+      )}
+
       {/* Project Settings — set once before adding rooms */}
       <div className="bg-white border rounded-xl p-4 space-y-4">
         <h3 className="font-semibold text-gray-800 flex items-center gap-2"><Settings size={18} /> Project Settings</h3>
@@ -1777,7 +1890,7 @@ const PhotoAnalysisTab = memo(function PhotoAnalysisTab({ onEstimate, onError, a
         <RoomCard key={room.id} room={room}
           onRemoveRoom={removeRoom} onAddPhotos={addPhotosToRoom} onRemovePhoto={removePhoto}
           onAnalyze={analyzeRoom} onUpdateRoom={updateRoom} onUpdateItem={updateItem} onRemoveItem={removeItem} onAddItem={addItem}
-          apiConnected={apiConnected} />
+          onPhotoPreview={setLightboxPhoto} apiConnected={apiConnected} />
       ))}
 
       {rooms.length === 0 && (
@@ -1932,7 +2045,7 @@ const FLAG_COLORS = {
 };
 
 // Room Card Component
-const RoomCard = memo(function RoomCard({ room, onRemoveRoom, onAddPhotos, onRemovePhoto, onAnalyze, onUpdateRoom, onUpdateItem, onRemoveItem, onAddItem, apiConnected }) {
+const RoomCard = memo(function RoomCard({ room, onRemoveRoom, onAddPhotos, onRemovePhoto, onAnalyze, onUpdateRoom, onUpdateItem, onRemoveItem, onAddItem, onPhotoPreview, apiConnected }) {
   const fileInputRef = useRef(null);
   const [expanded, setExpanded] = useState(true);
   const [expandedItemId, setExpandedItemId] = useState(null);
@@ -1978,7 +2091,8 @@ const RoomCard = memo(function RoomCard({ room, onRemoveRoom, onAddPhotos, onRem
             <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-6 gap-2">
               {room.photos.map(p => (
                 <div key={p.id} className="relative group aspect-square rounded-lg overflow-hidden border">
-                  <img src={p.preview} alt={p.name} className="w-full h-full object-cover" />
+                  <img src={p.preview} alt={p.name} className="w-full h-full object-cover cursor-zoom-in"
+                    onClick={() => onPhotoPreview(p)} />
                   <button onClick={() => onRemovePhoto(room.id, p.id)}
                     className="absolute top-1 right-1 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><X size={10} /></button>
                   <div className="absolute bottom-0 inset-x-0 bg-black/50 px-1 py-0.5 text-[10px] text-white truncate">{p.name}</div>

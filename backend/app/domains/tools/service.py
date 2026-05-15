@@ -75,24 +75,33 @@ class ToolSessionService:
         return query.order_by(ToolSession.created_at.desc()).offset(skip).limit(limit).all()
 
     def strip_heavy_data(self, sessions: List[ToolSession]) -> List[ToolSession]:
-        """Strip base64 photos and other heavy blobs from session data for list views.
+        """Strip heavy data from session data for list views.
 
-        Mutates session.data in-place (detached from DB after query) to remove
-        photo_rooms[].photos arrays and any other large binary fields, keeping
-        the response lightweight for listing endpoints.
+        Keeps only the fields needed to render the session list (name, status,
+        client_info, mode, room count). Drops: result, photo data, rooms detail,
+        corrections, and other large nested structures.
         """
+        KEEP_KEYS = {"mode", "status", "client_info", "company_override"}
+
         for session in sessions:
             data = session.data
             if not data or not isinstance(data, dict):
                 continue
-            # Strip photo_rooms photos (each photo is ~200KB-1MB base64)
+
+            # Compute summary counts before stripping
             photo_rooms = data.get("photo_rooms")
+            rooms = data.get("rooms")
+            room_count = 0
             if photo_rooms and isinstance(photo_rooms, list):
-                for room in photo_rooms:
-                    if isinstance(room, dict) and "photos" in room:
-                        # Keep count for UI display but drop the actual data
-                        room["photo_count"] = len(room["photos"]) if isinstance(room["photos"], list) else 0
-                        room["photos"] = []
+                room_count = len(photo_rooms)
+            elif rooms and isinstance(rooms, list):
+                room_count = len(rooms)
+
+            # Replace data with lightweight summary
+            summary = {k: data[k] for k in KEEP_KEYS if k in data}
+            summary["room_count"] = room_count
+            session.data = summary
+
         return sessions
 
     def get_session(self, session_id: UUID, company_id: UUID) -> ToolSession:

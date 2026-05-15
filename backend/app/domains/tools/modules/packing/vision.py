@@ -65,6 +65,7 @@ except ImportError:
 MAX_IMAGE_BYTES = 1_000_000   # 1 MB per image — 1024 px JPEG is sufficient
 MAX_IMAGE_DIM = 1024          # px — halving from 2048 cuts image tokens 4×
 MAX_IMAGES_PER_ROOM = 6       # hard cap after deduplication
+CONFIDENCE_THRESHOLD = 0.8    # minimum confidence (0–1) to accept results
 
 
 # ============================================
@@ -79,6 +80,11 @@ ITEM_CATEGORIES = [
 
 DENSITY_VALUES = ["light", "normal", "dense", "heavy"]
 ROOM_SIZE_VALUES = ["small", "large", "xlarge"]
+
+# Item size class — determines box/blanket quantity and packing approach
+ITEM_SIZE_VALUES = ["XS", "S", "M", "L", "XL", "XXL"]
+# Item weight class — determines crew needs and labor time
+ITEM_WEIGHT_VALUES = ["light", "medium", "heavy", "extra_heavy"]
 
 MATERIAL_KEYS = [
     "wardrobe_box", "wardrobe_box_small", "wardrobe_box_large",
@@ -117,20 +123,22 @@ PASS1_TOOL = {
                 "description": (
                     "Every MOVABLE, packable item visible. "
                     "INCLUDE: freestanding furniture, electronics, boxes, decor, rugs, "
-                    "baskets, lamps, books, artwork, bedding, clothing, freestanding "
-                    "appliances (fridge, washer/dryer, stove), wall-mounted TVs. "
+                    "baskets, freestanding lamps (table/floor lamps ONLY), books, artwork, "
+                    "bedding, clothing, freestanding appliances (fridge, washer/dryer, stove), "
+                    "wall-mounted TVs, gym/exercise equipment. "
                     "EXCLUDE anything permanently attached to the building structure — "
-                    "recessed/ceiling lights, ceiling fans, pendant fixtures, bathtub, "
-                    "toilet, shower, built-in kitchen/bathroom cabinets (screwed to wall), "
-                    "countertops, backsplash, built-in shelving, HVAC vents, thermostats, "
-                    "blinds/shutters on tracks, smoke detectors. "
+                    "ALL ceiling/wall lights (recessed, pendant, chandelier, sconce, track), "
+                    "ceiling fans, bathtub, toilet, shower, built-in kitchen/bathroom cabinets, "
+                    "kitchen islands (unless clearly a rolling cart), countertops, backsplash, "
+                    "built-in shelving, HVAC vents, thermostats, ALL window treatments "
+                    "(blinds, shades, shutters), smoke detectors, towel bars. "
                     "KEY TEST: if removing it requires cutting plumbing, unscrewing from "
                     "wall/ceiling, or structural work → EXCLUDE. If it can be carried out "
                     "as-is → INCLUDE."
                 ),
                 "items": {
                     "type": "object",
-                    "required": ["name", "category", "quantity", "is_high_value", "is_fragile"],
+                    "required": ["name", "category", "quantity", "is_high_value", "is_fragile", "confidence"],
                     "properties": {
                         "name": {
                             "type": "string",
@@ -167,6 +175,18 @@ PASS1_TOOL = {
                         "is_fragile": {
                             "type": "boolean",
                             "description": "True if breakable or requires delicate handling",
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                            "description": (
+                                "Detection confidence for this item (0.0–1.0). "
+                                "0.9+: clearly visible, easily identifiable. "
+                                "0.8–0.9: visible but partially obscured. "
+                                "0.6–0.8: mostly guessed from context. "
+                                "<0.6: highly uncertain."
+                            ),
                         },
                     },
                 },
@@ -346,63 +366,35 @@ def _build_pass1_tool_prompt(
             "Only report items NOT on this list.\n"
         )
 
-    return f"""You are a professional Content Pack-Out Estimator. Analyze the photo(s) and list every packable item.
+    return f"""You are a professional Content Pack-Out Estimator. Analyze the photo(s) of a "{room_name}" and list every packable item.
 {multi_note}{existing_note}
-NOTE: The user labeled this room "{room_name}" but IGNORE that label when deciding what items exist. Only report what you ACTUALLY SEE in the image.
+STEP 1 — FIND ALL LARGE ITEMS FIRST:
+Scan the entire photo for furniture and large items. These are the most important.
+Common items by room type:
+- Bedroom: bed frame, mattress, dresser, nightstand, wardrobe, desk, chair, mirror, TV, lamp
+- Living Room: sofa, sectional, coffee table, TV, bookshelf, armchair, end table, lamp
+- Dining: dining table, dining chairs, china cabinet, buffet/sideboard
+- Kitchen: refrigerator, stove/range, microwave, kitchen table, chairs
+- Gym: treadmill, elliptical, stationary bike, weight bench, cable machine, dumbbell rack, power rack
+- Garage: tool chest, workbench, bicycle, freestanding shelving
 
-RULES:
-1. Identify every MOVABLE, packable item — furniture, electronics, boxes, decor, rugs, lamps, books, artwork, bedding, clothing, freestanding appliances, etc.
-2. DWELLING vs. CONTENT — apply this test for every item you see:
-   EXCLUDE if: removing it requires cutting plumbing/electrical, unscrewing from wall/ceiling, or structural work.
-   INCLUDE if: it can be picked up and carried out as-is (even if heavy).
+STEP 2 — FIND SMALLER ITEMS:
+Look on surfaces, shelves, floor, and inside visible storage for smaller items.
+Bundle small related items into groups:
+- Bedding (pillows, sheets, blankets, comforter) → "Bedding Set" qty=1
+- Small kitchenware → "Kitchen Utensils Set" qty=1
+- Small toiletries → "Bathroom Sundries" qty=estimated count
+- Small scattered items → "Miscellaneous Small Items" qty=estimated count
 
-   ALWAYS EXCLUDE (permanently attached to structure):
-   - Recessed/pot lights, ceiling-mounted light fixtures, ceiling fans
-   - Bathtub, shower, toilet — plumbed into floor/wall
-   - Built-in kitchen cabinets (upper/lower wall cabinets screwed to wall)
-   - Built-in bathroom vanity cabinet (if wall-mounted/plumbed)
-   - Countertops, backsplash, tile
-   - Built-in shelving or closet organizers attached to walls
-   - HVAC vents, thermostats, smoke detectors, electrical panels
-   - Window blinds, shutters, or curtain rods mounted to wall/frame
+STEP 3 — EXCLUDE FIXED STRUCTURES:
+EXCLUDE anything attached to the building: ceiling lights, ceiling fans, blinds, built-in cabinets, kitchen islands, toilets, bathtubs, wall-mounted mirrors, wall-mounted pull-up bars, HVAC vents, smoke detectors.
+INCLUDE freestanding items even if heavy: refrigerator, washer, dryer, freestanding shelves, wall-mounted TVs.
+Simple test: can it be picked up and carried out? → INCLUDE. Requires unscrewing/cutting pipes? → EXCLUDE.
 
-   ALWAYS INCLUDE (freestanding / removable content):
-   - Freestanding kitchen island (sits on floor, not bolted to wall)
-   - Freestanding wardrobe, armoire, storage cabinet
-   - Refrigerator, stove/range, washer, dryer (appliances — move even if connected)
-   - Microwave (countertop or over-range — both are content)
-   - Wall-mounted TV (content — it's electronics, just needs unmounting)
-   - Curtains/drapes (the fabric itself, not the rod)
-   - Freestanding baker's rack, shelving unit, or bookshelf
-
-   AMBIGUOUS — USE VISUAL JUDGMENT:
-   - Cabinet: if it looks built into the wall (flush, no gap, no legs) → EXCLUDE. If it's freestanding with visible sides/legs → INCLUDE.
-   - Shelving: if brackets are screwed into wall with no way to remove shelf as a unit → EXCLUDE. If it's a standalone unit → INCLUDE.
-
-3. ONLY list items you can visually confirm. If an item is partially covered, list what you can SEE (e.g., a quilt covering something bed-shaped = list the quilt AND the bed). Do NOT guess or infer items based on room type or label.
-4. NAME items for PACKING: type + material + size. NO colors, patterns, brands, characters, or location info.
-   - INCLUDE size/configuration info that AFFECTS PACKING: "3-Section Sectional Sofa", "6-Shelf Tall Bookcase", "4-Drawer Dresser", "King Bed Frame"
-   - GOOD: "3-Section L-Shaped Sofa", "Tall 5-Shelf Wooden Bookcase", "Queen Bed Frame", "Large 3-Door Wardrobe"
-   - BAD: "Comfortable Sofa", "Nice Bookshelf", "Big Bed"
-5. Scan EVERY area: foreground, background, shelves, floor, walls, corners, on top of furniture.
-6. Group ONLY identical small items (e.g. "Photo Frame" qty 3). Each distinct item = separate entry.
-
-CRITICAL - REPORT CONTENTS SEPARATELY FROM CONTAINERS:
-- If a bookcase/bookshelf has visible books → list the bookcase as "Furniture" AND list "Book Collection" separately as "Books" with an estimated quantity
-- If a dresser has visible clothing → list the dresser as "Furniture" AND list "Clothing Items" as "Clothing"
-- If shelves have dishes/kitchenware → list as "Kitchenware" separately
-- Items ON TOP of furniture (lamps, decor, electronics) → list each separately
-
-DENSITY RATING — PRIMARY SPACE ONLY:
-- If any photo shows a closet, walk-in wardrobe, or attached storage area, inventory those items normally BUT do NOT factor them into the density rating.
-- Density must reflect how crowded the MAIN living area feels (open floor space, furniture arrangement), not the total item count across all photos.
-- A master bedroom with a packed walk-in closet photo is still "normal" density if the bedroom itself is typically furnished.
-
-SOFA/SEATING SIZE RULES (affects material quantity significantly):
-- Standard sofa (2-3 cushions, single piece): quantity = 1
-- Sectional sofa with 2 pieces: quantity = 2, name = "2-Section Sectional Sofa"
-- Sectional sofa with 3+ pieces: quantity = 3 (or more), name = "3-Section Sectional Sofa"
-- Each section = separate packing unit requiring its own cover and blankets
+NAMING:
+- Include size info that affects packing: "Queen Bed Frame", "4-Drawer Dresser", "3-Section Sectional Sofa"
+- NO colors, brands, or patterns.
+- List contents separately from containers (books separately from bookshelf, clothing separately from dresser).
 
 Use the report_room_contents tool to submit your findings."""
 
@@ -435,7 +427,10 @@ Include each material key once per unit needed. Examples:
 - King/Queen bed frame (disassembly required): ["moving_blanket", "moving_blanket", "moving_blanket", "stretch_wrap"]
 - Large 3-door wardrobe: ["moving_blanket", "moving_blanket", "moving_blanket", "stretch_wrap"]
 - Dresser (4+ drawers): ["moving_blanket", "moving_blanket", "stretch_wrap"]
-- TV 50"+: ["tv_box", "bubble_wrap_12", "bubble_wrap_12"]
+- TV / large monitor (32"+): ["tv_box", "bubble_wrap_12", "bubble_wrap_12"]
+  IMPORTANT: tv_box is ONLY for actual TVs or monitors 32" and larger.
+  Do NOT use tv_box for: gaming consoles, routers, small monitors, speakers, printers, or other electronics.
+  For small/medium electronics use: ["medium_box", "bubble_wrap_12"] instead.
 - Book collection (100 books): set quantity=100 in item, use ["book_box"] once — calculator divides by 15 books/box automatically
 - Glass/dish items: ["dish_pack_box", "packing_paper", "packing_paper"]
 
@@ -451,14 +446,17 @@ per_unit_labor_hours = marginal time to pack EACH unit.
 | Clothing items           | 0.20  | 0.01    | 30  | 0.50h  |
 | Dishes/glassware set     | 0.20  | 0.04    | 15  | 0.80h  |
 | Photo frames             | 0.10  | 0.05    |  5  | 0.35h  |
-| 3-section sectional      | 0.10  | 0.55    |  3  | 1.75h  |
-| Single standard sofa     | 0.10  | 0.75    |  1  | 0.85h  |
-| Dining chairs            | 0.10  | 0.30    |  6  | 1.90h  |
-| Large wardrobe           | 0.20  | 1.50    |  1  | 1.70h  |
-| King bed frame           | 0.15  | 1.00    |  1  | 1.15h  |
+| 3-section sectional      | 0.10  | 0.45    |  3  | 1.45h  |
+| Single standard sofa     | 0.10  | 0.50    |  1  | 0.60h  |
+| Dining chairs            | 0.10  | 0.25    |  6  | 1.60h  |
+| Large wardrobe           | 0.15  | 0.75    |  1  | 0.90h  |
+| King bed frame           | 0.15  | 0.60    |  1  | 0.75h  |
 | Small lamp               | 0.02  | 0.10    |  1  | 0.12h  |
-| Large appliance          | 0.20  | 0.90    |  1  | 1.10h  |
+| Large appliance          | 0.20  | 0.45    |  1  | 0.65h  |
 | Fragile glassware set    | 0.20  | 0.05    | 15  | 0.95h  |
+| Treadmill                | 0.15  | 0.50    |  1  | 0.65h  |
+| Dumbbell set             | 0.15  | 0.03    | 20  | 0.75h  |
+| Power rack (disassembly) | 0.20  | 0.80    |  1  | 1.00h  |
 
 KEY: BATCH items (books, clothing, small kitchenware) → LOW per_unit, HIGHER base.
      INDIVIDUAL items (furniture, each wrapped separately) → LOW base, HIGHER per_unit.
@@ -638,23 +636,17 @@ async def _analyze_room_with_claude(
     room_name: str,
     existing_items: Optional[List[ExistingItem]] = None,
 ) -> Optional[dict]:
-    """Hybrid 2-pass room analysis using Claude tool use.
+    """Single-pass room analysis using Claude Vision + tool use.
 
-    Pass 1 (vision + tool use):
-        Send images with the report_room_contents tool schema. Claude returns
-        structured output with constrained category enums and typed fields.
-        Item names are then normalized via the packing taxonomy.
+    Identifies every packable item in the photo(s) with structured output:
+    name, category, quantity, is_high_value, is_fragile, confidence.
 
-    Pass 2 (text + tool use):
-        Send the normalized item list with the enrich_packing_details tool.
-        Claude returns packing method, materials (constrained to valid keys),
-        labor estimates, and flags.
-
-    Returns the merged result dict, or None on failure.
+    Packing details (method, materials, labor) are NOT determined here —
+    they are assigned by rule-based logic at calculate time so that manual
+    edits to the item list are always reflected in the estimate.
     """
     client = _anthropic_module.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
-    # ── Pass 1: Vision + Tool Use ──────────────────────────────────────────
     per_image_limit = MAX_IMAGE_BYTES // max(len(images), 1)
     per_image_limit = max(per_image_limit, 1_000_000)
 
@@ -674,7 +666,7 @@ async def _analyze_room_with_claude(
     content.append({"type": "text", "text": pass1_prompt})
 
     pass1_msg = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model="claude-sonnet-4-6",
         max_tokens=4096,
         temperature=0,
         tools=[PASS1_TOOL],
@@ -686,38 +678,95 @@ async def _analyze_room_with_claude(
     if not pass1_result or not pass1_result.get("items"):
         return pass1_result
 
-    # ── Taxonomy Normalization (deterministic, no API cost) ────────────────
+    # Taxonomy normalization (deterministic, no API cost)
     if _TAXONOMY_AVAILABLE and normalize_items_list is not None:
         normalize_items_list(pass1_result["items"])
 
-    # ── Pass 2: Text-only + Tool Use ───────────────────────────────────────
-    # Compact JSON (no indent) saves ~15 % input tokens vs indent=2.
-    items_json = json.dumps(pass1_result["items"])
-    pass2_prompt = _build_pass2_tool_prompt(items_json)
-
-    pass2_msg = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=4096,
-        temperature=0,
-        tools=[PASS2_TOOL],
-        tool_choice={"type": "tool", "name": "enrich_packing_details"},
-        messages=[{"role": "user", "content": pass2_prompt}],
-    )
-
-    pass2_result = _extract_tool_result(pass2_msg)
-
-    # ── Merge: Pass 1 metadata + Pass 2 enriched items ────────────────────
-    if pass2_result and pass2_result.get("items"):
-        return {
-            "items": pass2_result["items"],
-            "density": pass1_result.get("density", "normal"),
-            "room_size": pass1_result.get("room_size", "large"),
-            "confidence": pass1_result.get("confidence", 0.7),
-        }
-
-    # Pass 2 failed — return Pass 1 items (already normalized, just missing
-    # packing details).
     return pass1_result
+
+
+# Items that are always trivial — not worth a separate packing line.
+# Broad keywords; matched via substring.
+_TRIVIAL_KEYWORDS = {
+    "mouse pad", "mousepad", "coaster", "magnet", "keychain",
+    "pen", "pencil", "marker", "eraser", "paperclip", "rubber band",
+    "toy car", "toy truck", "toy figure", "action figure",
+    "bottle opener", "corkscrew", "napkin", "placemat",
+    "sponge", "scrub", "clip", "pin", "hook",
+    "soap", "lotion", "shampoo", "toothbrush", "toothpaste",
+    "deodorant", "razor", "comb", "brush",
+    "usb", "cable", "adapter", "dongle", "charger",
+    "battery", "light bulb", "bulb",
+    "candle", "incense", "air freshener", "potpourri",
+    "ornament", "figurine", "trinket", "knick-knack",
+    "spice", "condiment", "sauce bottle", "seasoning",
+    "measuring cup", "measuring spoon", "spatula", "whisk",
+    "tongs", "ladle", "peeler", "grater",
+    "tupperware", "container", "lid",
+    "hanger", "clothespin",
+    "notepad", "sticky note", "tape", "glue", "scissors",
+    "stamp", "envelope", "folder",
+    "dice", "card", "puzzle piece",
+    "leash", "pet toy", "pet bowl",
+}
+
+# Categories where individual items are almost always small enough to bundle
+_TRIVIAL_CATEGORIES = {"Collectibles"}
+
+# Items to NEVER bundle (even if small)
+_NEVER_BUNDLE_KEYWORDS = {
+    "frame", "photo", "picture", "artwork", "painting",
+    "vase", "wine", "crystal", "antique", "jewelry",
+    "camera", "watch", "instrument",
+}
+
+
+def _bundle_trivial_items(
+    items: List[DetectedContentItem],
+) -> List[DetectedContentItem]:
+    """Merge trivially small items into a single 'Miscellaneous Small Items' entry.
+
+    Keeps individually significant items (fragile, high-value, large).
+    """
+    keep: List[DetectedContentItem] = []
+    bundle_qty = 0
+
+    for item in items:
+        name_lower = (item.name or "").lower()
+
+        # Never bundle these
+        if any(k in name_lower for k in _NEVER_BUNDLE_KEYWORDS):
+            keep.append(item)
+            continue
+
+        # Skip high-value or fragile — they need individual attention
+        if item.is_high_value or item.is_fragile:
+            keep.append(item)
+            continue
+
+        # Check if trivial by keyword or category
+        is_trivial = (
+            any(k in name_lower for k in _TRIVIAL_KEYWORDS)
+            or item.category in _TRIVIAL_CATEGORIES
+        )
+
+        if is_trivial:
+            bundle_qty += item.quantity
+        else:
+            keep.append(item)
+
+    # Add the bundle if any trivial items were found
+    if bundle_qty > 0:
+        keep.append(DetectedContentItem(
+            name="Miscellaneous Small Items",
+            category="Other",
+            quantity=bundle_qty,
+            is_high_value=False,
+            is_fragile=False,
+            confidence=0.9,
+        ))
+
+    return keep
 
 
 def _build_room_analysis_response(
@@ -732,6 +781,10 @@ def _build_room_analysis_response(
     field_notes: List[str] = []
 
     for item_data in result.get("items", []):
+        item_confidence = item_data.get("confidence", 1.0)
+        if item_confidence < CONFIDENCE_THRESHOLD:
+            continue
+
         qty = item_data.get("quantity", 1)
 
         # New split model: base + per_unit * qty
@@ -770,6 +823,9 @@ def _build_room_analysis_response(
 
         items.append(DetectedContentItem(
             name=item_data.get("name", "Unknown"),
+            description=item_data.get("description"),
+            size=item_data.get("size"),
+            weight=item_data.get("weight"),
             category=item_data.get("category", "Other"),
             quantity=qty,
             is_high_value=is_hv,
@@ -787,7 +843,13 @@ def _build_room_analysis_response(
             estimated_labor_hours=computed_total,
             special_instructions=instructions,
             estimator_flags=flags if flags else None,
+            confidence=item_confidence,
         ))
+
+    # Post-process: bundle trivial small items into "Miscellaneous Small Items"
+    # Items that are individually too small to warrant a packing line
+    # (mouse pad, toy truck, coaster, candle, etc.)
+    items = _bundle_trivial_items(items)
 
     return RoomAnalysisResponse(
         room_name=room_name,
@@ -861,7 +923,20 @@ async def analyze_room_photos(
             ),
         )
 
-    return _build_room_analysis_response(result, room_name)
+    response = _build_room_analysis_response(result, room_name)
+
+    if response.confidence_score < CONFIDENCE_THRESHOLD:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Analysis confidence too low "
+                f"({int(response.confidence_score * 100)}%). "
+                "Please provide clearer photos with better lighting and more "
+                "complete room coverage, then try again."
+            ),
+        )
+
+    return response
 
 
 def build_master_content_list(
@@ -1004,6 +1079,10 @@ async def analyze_room_with_retry(
                 result, room_name,
             )
             return resp, None, None
+
+        except HTTPException as http_exc:
+            # Non-retryable: propagate the human-readable detail directly
+            return None, "ANALYSIS_ERROR", http_exc.detail
 
         except Exception as exc:
             exc_str = str(exc).lower()

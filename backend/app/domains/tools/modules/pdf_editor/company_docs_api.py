@@ -6,27 +6,37 @@ ScopeIt - Company Documents API
 CRUD endpoints for the company-wide reusable document library.
 These endpoints are NOT tool-gated: any authenticated user may access them.
 
-Router prefix `/api/company-documents` is registered in main.py.
+Router prefix ``/api/company-documents`` is registered in main.py.
 """
 
+import io
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.storage import get_storage
 from app.domains.user.models import User
 from app.domains.tools.modules.pdf_editor.schemas import (
     CompanyDocumentListResponse,
     CompanyDocumentResponse,
     CompanyDocumentUpdate,
 )
-from app.domains.tools.modules.pdf_editor.service import CompanyDocumentService
-
-import os
+from app.domains.tools.modules.pdf_editor.service import (
+    CompanyDocumentService,
+)
 
 router = APIRouter()
 
@@ -71,8 +81,6 @@ def list_company_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> CompanyDocumentListResponse:
-    """Return a paginated list of company documents, optionally filtered by name
-    search text and/or category."""
     service = CompanyDocumentService(db)
     items, total = service.list(
         company_id=current_user.company_id,
@@ -82,14 +90,21 @@ def list_company_documents(
         category=category,
     )
     return CompanyDocumentListResponse(
-        items=[CompanyDocumentResponse(**_to_response(doc)) for doc in items],
+        items=[
+            CompanyDocumentResponse(**_to_response(doc))
+            for doc in items
+        ],
         total=total,
         skip=skip,
         limit=limit,
     )
 
 
-@router.post("/upload", response_model=CompanyDocumentResponse, status_code=201)
+@router.post(
+    "/upload",
+    response_model=CompanyDocumentResponse,
+    status_code=201,
+)
 def upload_company_document(
     file: UploadFile = File(...),
     name: str = Form(...),
@@ -101,8 +116,8 @@ def upload_company_document(
 ) -> CompanyDocumentResponse:
     """Upload a PDF to the company document library.
 
-    ``tags`` is an optional comma-separated string that will be split into a
-    list before storage, e.g. ``"contract,warranty,roofing"``.
+    ``tags`` is an optional comma-separated string that will be split
+    into a list before storage, e.g. ``"contract,warranty,roofing"``.
     """
     parsed_tags: list[str] = (
         [t.strip() for t in tags.split(",") if t.strip()]
@@ -129,7 +144,6 @@ def get_company_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> CompanyDocumentResponse:
-    """Retrieve metadata for a single company document."""
     service = CompanyDocumentService(db)
     doc = service.get_or_404(
         company_id=current_user.company_id,
@@ -143,7 +157,7 @@ def download_company_document(
     document_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+):
     """Stream the underlying PDF file as a download."""
     service = CompanyDocumentService(db)
     doc = service.get_or_404(
@@ -151,15 +165,25 @@ def download_company_document(
         doc_id=document_id,
     )
 
-    if not os.path.exists(doc.file_path):
-        raise HTTPException(status_code=404, detail="File not found on disk")
+    storage = get_storage()
+    if not storage.exists(doc.file_path):
+        raise HTTPException(
+            status_code=404, detail="File not found"
+        )
 
-    safe_filename = doc.name if doc.name.endswith(".pdf") else f"{doc.name}.pdf"
+    content = storage.read(doc.file_path)
+    safe_filename = (
+        doc.name if doc.name.endswith(".pdf") else f"{doc.name}.pdf"
+    )
 
-    return FileResponse(
-        path=doc.file_path,
+    return StreamingResponse(
+        io.BytesIO(content),
         media_type="application/pdf",
-        filename=safe_filename,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{safe_filename}"'
+            ),
+        },
     )
 
 
@@ -168,24 +192,23 @@ def get_company_document_thumbnail(
     document_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
-    """Return the PNG thumbnail generated from the first page of the document.
-
-    Returns 404 if no thumbnail was generated (e.g. pdf2image unavailable at
-    upload time).
-    """
+):
+    """Return the PNG thumbnail for the first page."""
     service = CompanyDocumentService(db)
     doc = service.get_or_404(
         company_id=current_user.company_id,
         doc_id=document_id,
     )
 
-    if not doc.thumbnail_path or not os.path.exists(doc.thumbnail_path):
-        raise HTTPException(status_code=404, detail="Thumbnail not available")
+    storage = get_storage()
+    if not doc.thumbnail_path or not storage.exists(doc.thumbnail_path):
+        raise HTTPException(
+            status_code=404, detail="Thumbnail not available"
+        )
 
-    return FileResponse(
-        path=doc.thumbnail_path,
-        media_type="image/png",
+    content = storage.read(doc.thumbnail_path)
+    return StreamingResponse(
+        io.BytesIO(content), media_type="image/png"
     )
 
 
@@ -215,13 +238,14 @@ def delete_company_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Soft-delete a company document.  The file is retained on disk; the record
-    is simply marked ``is_active = False``."""
+    """Soft-delete a company document."""
     service = CompanyDocumentService(db)
     deleted = service.delete(
         company_id=current_user.company_id,
         doc_id=document_id,
     )
     if not deleted:
-        raise HTTPException(status_code=404, detail="Company document not found")
+        raise HTTPException(
+            status_code=404, detail="Company document not found"
+        )
     return {"ok": True}

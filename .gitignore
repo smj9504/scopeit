@@ -138,3 +138,13 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# ===================
+# Generated / Export Data
+# ===================
+.index/
+parsed_json/
+packing_tool_export/
+eagleview_export/
+reference/
+moving_estimate/photo_analyze/mnt/

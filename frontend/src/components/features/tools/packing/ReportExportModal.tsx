@@ -289,6 +289,7 @@ const ReportExportModal: React.FC<ReportExportModalProps> = ({
   // Additional options
   const [notes, setNotes] = useState('');
   const [includeSignature, setIncludeSignature] = useState(false);
+  const [includeFieldNotes, setIncludeFieldNotes] = useState(true);
   const [imageQuality, setImageQuality] = useState(60);
   const [exporting, setExporting] = useState(false);
   const [taxRate] = useState(0);
@@ -400,11 +401,15 @@ const ReportExportModal: React.FC<ReportExportModalProps> = ({
         tax_rate: taxRate,
         notes: notes || undefined,
         include_signature_page: includeSignature,
+        include_field_notes: includeFieldNotes,
         image_quality: imageQuality,
         max_image_width: 800,
       });
 
-      const filename = `report-${activeSessionId.slice(0, 8)}.pdf`;
+      const addr = clientInfo.property_address?.trim().replace(/[<>:"/\\|?*]+/g, '').replace(/\s+/g, ' ');
+      const filename = addr
+        ? `Pack_in_out Report - ${addr}.pdf`
+        : `Pack_in_out Report-${activeSessionId.slice(0, 8)}.pdf`;
 
       if (forSign && onRequestSign) {
         onRequestSign(blob, filename);
@@ -913,6 +918,19 @@ const ReportExportModal: React.FC<ReportExportModalProps> = ({
             border: `1px solid ${colors.border}`,
           }}
         >
+          <Row justify="space-between" align="middle">
+            <Col>
+              <Text style={{ fontSize: 13 }}>Include Field Notes</Text>
+            </Col>
+            <Col>
+              <Switch
+                size="small"
+                checked={includeFieldNotes}
+                onChange={setIncludeFieldNotes}
+              />
+            </Col>
+          </Row>
+
           <Row justify="space-between" align="middle">
             <Col>
               <Text style={{ fontSize: 13 }}>Include Signature Page</Text>

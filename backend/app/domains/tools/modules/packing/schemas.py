@@ -148,6 +148,8 @@ class QuickEstimateRequest(BaseModel):
     include_packback: bool = Field(default=True)
     include_op: bool = Field(default=True)
     op_rate: int = Field(default=20, ge=0, le=30)
+    material_rate: int = Field(default=25, ge=10, le=40,
+        description="Material cost as % of pack-out labor")
     include_contingency: bool = Field(default=False)
     contingency_rate: int = Field(default=0, ge=0, le=20)
     supplement_overrides: Dict[str, bool] = Field(default_factory=dict)
@@ -163,6 +165,7 @@ class MaterialItem(BaseModel):
     unit: str
     unit_price: float
     total: float
+    detail: Optional[str] = None
 
 
 class SectionBreakdown(BaseModel):
@@ -187,6 +190,7 @@ class SupplementItem(BaseModel):
     amount: float = 0
     triggered: bool = False
     enabled: bool = True
+    reason: str = ""
 
 
 class EstimateResponse(BaseModel):
@@ -220,6 +224,7 @@ class EstimateResponse(BaseModel):
     supplements: List["SupplementItem"] = Field(default_factory=list)
     supplements_total: float = 0
     grand_total: float
+    notes: List[str] = Field(default_factory=list)
 
 
 # ============================================
@@ -242,6 +247,18 @@ class RoomPhotoAnalysisRequest(BaseModel):
 
 class DetectedContentItem(BaseModel):
     name: str = Field(..., description="Item name")
+    description: Optional[str] = Field(
+        default=None,
+        description="Size/dimension descriptor (e.g. '3-seat, ~84in wide')",
+    )
+    size: Optional[str] = Field(
+        default=None,
+        description="Size class: XS, S, M, L, XL, XXL",
+    )
+    weight: Optional[str] = Field(
+        default=None,
+        description="Weight class: light, medium, heavy, extra_heavy",
+    )
     category: str = Field(..., description="Category (e.g. 'Furniture', 'Electronics')")
     quantity: int = Field(default=1, ge=1)
     is_high_value: bool = Field(default=False)
@@ -265,6 +282,10 @@ class DetectedContentItem(BaseModel):
     special_instructions: Optional[str] = Field(default=None)
     estimator_flags: Optional[List[str]] = Field(default=None)
     match_confidence: Optional[float] = Field(default=None)
+    confidence: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0,
+        description="AI detection confidence for this item (0.0–1.0)",
+    )
 
     @model_validator(mode="after")
     def compute_total_labor(self):
@@ -290,10 +311,16 @@ class RoomAnalysisResponse(BaseModel):
 class RoomContentInput(BaseModel):
     room_name: str
     preset_id: Optional[str] = None
-    items: List[DetectedContentItem]
+    items: List[DetectedContentItem] = Field(default_factory=list)
     density: str = "normal"
     floor: str = "1st"
     contamination: str = "clean"
+    # Preset-based fallback fields (used when AI analysis is unusable)
+    use_preset: bool = Field(default=False, description="If true, use preset-based calculation instead of AI items")
+    preset: Optional[str] = Field(default=None, description="Room preset key for preset-based calculation")
+    hints: List[str] = Field(default_factory=list, description="Content hints for preset-based calculation")
+    hint_volume: Dict[str, int] = Field(default_factory=dict, description="Per-hint volume level index")
+    hint_qty: Dict[str, int] = Field(default_factory=dict, description="Per-unit hint quantity")
     special_items: List[str] = Field(
         default_factory=list,
         description="Per-room special item keys (e.g., 'piano', 'pool_table')"
@@ -312,6 +339,8 @@ class RoomsEstimateRequest(BaseModel):
     include_packback: bool = Field(default=True)
     include_op: bool = Field(default=True)
     op_rate: int = Field(default=20, ge=0, le=30)
+    material_rate: int = Field(default=25, ge=10, le=40,
+        description="Material cost as % of pack-out labor")
     include_contingency: bool = Field(default=False)
     contingency_rate: int = Field(default=0, ge=0, le=20)
     supplement_overrides: Dict[str, bool] = Field(default_factory=dict)
@@ -433,6 +462,7 @@ class ReportExportRequest(BaseModel):
     tax_rate: float = Field(default=0.0, ge=0, le=100)
     notes: Optional[str] = Field(default=None, description="Additional notes for the report")
     include_signature_page: bool = Field(default=False, description="Add signature page at end")
+    include_field_notes: bool = Field(default=True, description="Include auto-generated handling notes per room")
     image_quality: int = Field(default=60, ge=20, le=90, description="JPEG quality for photos (lower = smaller file)")
     max_image_width: int = Field(default=800, ge=400, le=1200, description="Max image width in pixels")
 

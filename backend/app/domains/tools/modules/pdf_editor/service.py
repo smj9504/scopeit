@@ -7,12 +7,13 @@ Handles PDF document CRUD, page operations (merge, reorder, delete, rotate),
 annotation persistence, flattening, multi-image-to-PDF conversion, and the
 company document library.
 
+Storage: Abstracts file persistence via StorageBackend (local or R2).
 Database: SQLAlchemy 2.0 SYNC (Session, not AsyncSession).
 """
 
 import os
 import uuid
-import shutil
+import tempfile
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
@@ -22,8 +23,11 @@ from fastapi import HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.config import settings
-from app.domains.tools.modules.pdf_editor.models import CompanyDocument, PdfDocument
+from app.core.storage import get_storage, StorageBackend
+from app.domains.tools.modules.pdf_editor.models import (
+    CompanyDocument,
+    PdfDocument,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -39,7 +43,7 @@ ALLOWED_CONVERT_TYPES = {
     "image/webp",
     "image/heic",
     "image/tiff",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
@@ -53,76 +57,66 @@ class PdfEditorService:
     """
     Core service for user-owned PDF documents.
 
-    Covers:
-    - Upload / convert-to-PDF / multi-image-to-PDF
-    - CRUD (list, get, rename, soft-delete, duplicate)
-    - Page operations  (merge, reorder, delete, rotate)
-    - Annotation save / flatten-to-PDF
-    - Import from ScopeIt estimate / invoice (via pdf_generator)
-    - Import from company document library
+    File paths stored in the database are *storage keys* (relative paths),
+    e.g. ``{company_id}/pdf-editor/{doc_id}/document.pdf``.
+    The active StorageBackend resolves these to local paths or R2 objects.
     """
 
     def __init__(self, db: Session):
         self.db = db
+        self.storage: StorageBackend = get_storage()
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Key helpers
     # ------------------------------------------------------------------
 
-    def _upload_dir(self, company_id: UUID) -> str:
-        path = os.path.join(settings.STORAGE_BASE_DIR, str(company_id), "pdf-editor")
-        os.makedirs(path, exist_ok=True)
-        return path
+    @staticmethod
+    def _key(company_id: UUID, doc_id: UUID, filename: str) -> str:
+        return f"{company_id}/pdf-editor/{doc_id}/{filename}"
 
-    def _document_dir(self, company_id: UUID, document_id: UUID) -> str:
-        path = os.path.join(self._upload_dir(company_id), str(document_id))
-        os.makedirs(path, exist_ok=True)
-        return path
+    # ------------------------------------------------------------------
+    # Local processing helpers
+    # ------------------------------------------------------------------
 
-    def _generate_thumbnail(self, file_path: str, output_path: str) -> Optional[str]:
-        """Render first page of a PDF as a 300-px-wide PNG thumbnail.
-
-        Returns output_path on success, None on any failure (missing
-        system library, corrupt PDF, etc.).  Never raises.
-        """
+    def _generate_thumbnail(
+        self, pdf_local_path: str, thumb_local_path: str
+    ) -> bool:
         try:
-            from pdf2image import convert_from_path  # type: ignore
+            from pdf2image import convert_from_path
 
             images = convert_from_path(
-                file_path, first_page=1, last_page=1, size=(300, None)
+                pdf_local_path, first_page=1, last_page=1, size=(300, None)
             )
             if images:
-                images[0].save(output_path, "PNG")
-                return output_path
+                images[0].save(thumb_local_path, "PNG")
+                return True
         except Exception:
             pass
-        return None
+        return False
 
-    def _page_count(self, file_path: str) -> int:
-        """Return the number of pages in a PDF, defaulting to 1 on error."""
+    @staticmethod
+    def _page_count(pdf_local_path: str) -> int:
         try:
-            from pypdf import PdfReader  # type: ignore
-
-            return len(PdfReader(file_path).pages)
+            from pypdf import PdfReader
+            return len(PdfReader(pdf_local_path).pages)
         except Exception:
             return 1
 
     # ------------------------------------------------------------------
-    # File-format converters (called internally)
+    # File-format converters
     # ------------------------------------------------------------------
 
-    def _image_to_pdf(self, image_path: str, output_path: str, rotation: int = 0) -> None:
-        """Convert a single image file to a single-page PDF letter-sized."""
-        from PIL import Image, ImageOps  # type: ignore
-        from reportlab.lib.pagesizes import letter  # type: ignore
-        from reportlab.pdfgen import canvas as rl_canvas  # type: ignore
+    def _image_to_pdf(
+        self, image_path: str, output_path: str, rotation: int = 0
+    ) -> None:
+        from PIL import Image, ImageOps
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas as rl_canvas
 
         img = Image.open(image_path)
-        # Apply EXIF orientation (phone photos are often rotated)
         img = ImageOps.exif_transpose(img)
-        # Apply user-specified rotation
         if rotation:
-            img = img.rotate(-rotation, expand=True)  # PIL rotates CCW, user expects CW
+            img = img.rotate(-rotation, expand=True)
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
 
@@ -147,12 +141,15 @@ class PdfEditorService:
             pass
 
     def _docx_to_pdf(self, docx_path: str, output_path: str) -> None:
-        """Convert a DOCX file to PDF via text extraction + ReportLab."""
         try:
-            from docx import Document as DocxDocument  # type: ignore
-            from reportlab.lib.pagesizes import letter  # type: ignore
-            from reportlab.lib.styles import getSampleStyleSheet  # type: ignore
-            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer  # type: ignore
+            from docx import Document as DocxDocument
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.platypus import (
+                Paragraph,
+                SimpleDocTemplate,
+                Spacer,
+            )
 
             doc = DocxDocument(docx_path)
             styles = getSampleStyleSheet()
@@ -163,7 +160,9 @@ class PdfEditorService:
                     story.append(Spacer(1, 6))
 
             if not story:
-                story.append(Paragraph("(Empty document)", styles["Normal"]))
+                story.append(
+                    Paragraph("(Empty document)", styles["Normal"])
+                )
 
             pdf_doc = SimpleDocTemplate(output_path, pagesize=letter)
             pdf_doc.build(story)
@@ -173,17 +172,53 @@ class PdfEditorService:
             )
 
     def _convert_to_pdf(
-        self, source_path: str, output_path: str, mime_type: str, rotation: int = 0
+        self,
+        source_path: str,
+        output_path: str,
+        mime_type: str,
+        rotation: int = 0,
     ) -> None:
-        """Dispatch to the appropriate converter based on MIME type."""
         if mime_type.startswith("image/"):
             self._image_to_pdf(source_path, output_path, rotation=rotation)
         elif "wordprocessingml" in mime_type:
             self._docx_to_pdf(source_path, output_path)
         else:
             raise HTTPException(
-                status_code=400, detail=f"Cannot convert {mime_type} to PDF"
+                status_code=400,
+                detail=f"Cannot convert {mime_type} to PDF",
             )
+
+    # ------------------------------------------------------------------
+    # Storage persistence helpers
+    # ------------------------------------------------------------------
+
+    def _persist_pdf_and_thumb(
+        self,
+        company_id: UUID,
+        doc_id: UUID,
+        pdf_local_path: str,
+        tmpdir: str,
+    ) -> tuple[str, int, int, Optional[str]]:
+        """Upload PDF + thumbnail to storage.
+
+        Returns (pdf_key, file_size, page_count, thumb_key_or_None).
+        """
+        pdf_key = self._key(company_id, doc_id, "document.pdf")
+        with open(pdf_local_path, "rb") as f:
+            pdf_data = f.read()
+        self.storage.write(pdf_key, pdf_data, "application/pdf")
+
+        file_size = len(pdf_data)
+        page_count = self._page_count(pdf_local_path)
+
+        thumb_local = os.path.join(tmpdir, "thumbnail.png")
+        thumb_key: Optional[str] = None
+        if self._generate_thumbnail(pdf_local_path, thumb_local):
+            thumb_key = self._key(company_id, doc_id, "thumbnail.png")
+            with open(thumb_local, "rb") as f:
+                self.storage.write(thumb_key, f.read(), "image/png")
+
+        return pdf_key, file_size, page_count, thumb_key
 
     # ------------------------------------------------------------------
     # Document CRUD
@@ -197,7 +232,6 @@ class PdfEditorService:
         name: Optional[str] = None,
         rotation: int = 0,
     ) -> PdfDocument:
-        """Accept an uploaded file, convert to PDF if needed, persist record."""
         if file.content_type not in ALLOWED_CONVERT_TYPES:
             raise HTTPException(
                 status_code=400,
@@ -207,47 +241,50 @@ class PdfEditorService:
         content = file.file.read()
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(
-                status_code=400, detail="File too large. Maximum size is 50 MB."
+                status_code=400,
+                detail="File too large. Maximum size is 50 MB.",
             )
 
         doc_id = uuid.uuid4()
-        doc_dir = self._document_dir(company_id, doc_id)
         is_pdf = file.content_type == "application/pdf"
 
-        if is_pdf:
-            file_path = os.path.join(doc_dir, "document.pdf")
-            with open(file_path, "wb") as fh:
-                fh.write(content)
-        else:
-            ext = (
-                file.filename.rsplit(".", 1)[-1]
-                if file.filename and "." in file.filename
-                else "bin"
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            if is_pdf:
+                pdf_path = os.path.join(tmpdir, "document.pdf")
+                with open(pdf_path, "wb") as fh:
+                    fh.write(content)
+            else:
+                ext = (
+                    file.filename.rsplit(".", 1)[-1]
+                    if file.filename and "." in file.filename
+                    else "bin"
+                )
+                original_path = os.path.join(tmpdir, f"original.{ext}")
+                with open(original_path, "wb") as fh:
+                    fh.write(content)
+                pdf_path = os.path.join(tmpdir, "document.pdf")
+                self._convert_to_pdf(
+                    original_path, pdf_path, file.content_type, rotation
+                )
+
+            pdf_key, file_size, page_count, thumb_key = (
+                self._persist_pdf_and_thumb(
+                    company_id, doc_id, pdf_path, tmpdir
+                )
             )
-            original_path = os.path.join(doc_dir, f"original.{ext}")
-            with open(original_path, "wb") as fh:
-                fh.write(content)
-            file_path = os.path.join(doc_dir, "document.pdf")
-            self._convert_to_pdf(original_path, file_path, file.content_type, rotation=rotation)
-
-        page_count = self._page_count(file_path)
-        pdf_size = os.path.getsize(file_path)
-
-        thumb_path = os.path.join(doc_dir, "thumbnail.png")
-        self._generate_thumbnail(file_path, thumb_path)
 
         doc = PdfDocument(
             id=doc_id,
             company_id=company_id,
             created_by=user_id,
             name=name or file.filename or "Untitled",
-            file_path=file_path,
-            file_size=pdf_size,
+            file_path=pdf_key,
+            file_size=file_size,
             page_count=page_count,
             mime_type="application/pdf",
             source_type="convert" if not is_pdf else "upload",
             annotations=[],
-            thumbnail_path=thumb_path if os.path.exists(thumb_path) else None,
+            thumbnail_path=thumb_key,
         )
         self.db.add(doc)
         self.db.commit()
@@ -267,10 +304,14 @@ class PdfEditorService:
             .first()
         )
 
-    def get_document_or_404(self, company_id: UUID, document_id: UUID) -> PdfDocument:
+    def get_document_or_404(
+        self, company_id: UUID, document_id: UUID
+    ) -> PdfDocument:
         doc = self.get_document(company_id, document_id)
         if not doc:
-            raise HTTPException(status_code=404, detail="Document not found")
+            raise HTTPException(
+                status_code=404, detail="Document not found"
+            )
         return doc
 
     def list_documents(
@@ -305,7 +346,9 @@ class PdfEditorService:
         self.db.refresh(doc)
         return doc
 
-    def delete_document(self, company_id: UUID, document_id: UUID) -> bool:
+    def delete_document(
+        self, company_id: UUID, document_id: UUID
+    ) -> bool:
         doc = self.get_document(company_id, document_id)
         if not doc:
             return False
@@ -321,30 +364,36 @@ class PdfEditorService:
         new_name: Optional[str] = None,
     ) -> PdfDocument:
         original = self.get_document_or_404(company_id, document_id)
-
         new_id = uuid.uuid4()
-        new_dir = self._document_dir(company_id, new_id)
 
-        new_file = os.path.join(new_dir, "document.pdf")
-        shutil.copy2(original.file_path, new_file)
+        # Copy PDF
+        new_pdf_key = self._key(company_id, new_id, "document.pdf")
+        pdf_data = self.storage.read(original.file_path)
+        self.storage.write(new_pdf_key, pdf_data, "application/pdf")
 
-        new_thumb: Optional[str] = None
-        if original.thumbnail_path and os.path.exists(original.thumbnail_path):
-            new_thumb = os.path.join(new_dir, "thumbnail.png")
-            shutil.copy2(original.thumbnail_path, new_thumb)
+        # Copy thumbnail
+        new_thumb_key: Optional[str] = None
+        if original.thumbnail_path and self.storage.exists(
+            original.thumbnail_path
+        ):
+            new_thumb_key = self._key(company_id, new_id, "thumbnail.png")
+            thumb_data = self.storage.read(original.thumbnail_path)
+            self.storage.write(new_thumb_key, thumb_data, "image/png")
 
         doc = PdfDocument(
             id=new_id,
             company_id=company_id,
             created_by=user_id,
             name=new_name or f"{original.name} (Copy)",
-            file_path=new_file,
+            file_path=new_pdf_key,
             file_size=original.file_size,
             page_count=original.page_count,
             mime_type=original.mime_type,
             source_type="upload",
-            annotations=list(original.annotations) if original.annotations else [],
-            thumbnail_path=new_thumb,
+            annotations=(
+                list(original.annotations) if original.annotations else []
+            ),
+            thumbnail_path=new_thumb_key,
         )
         self.db.add(doc)
         self.db.commit()
@@ -362,40 +411,45 @@ class PdfEditorService:
         document_ids: list[str],
         name: Optional[str] = None,
     ) -> PdfDocument:
-        """Merge two or more documents (in given order) into a new document."""
-        from pypdf import PdfReader, PdfWriter  # type: ignore
+        from pypdf import PdfReader, PdfWriter
 
         if len(document_ids) < 2:
             raise HTTPException(
-                status_code=400, detail="At least 2 documents are required for merge"
+                status_code=400,
+                detail="At least 2 documents are required for merge",
             )
 
-        writer = PdfWriter()
-        doc_names: list[str] = []
-
-        for did in document_ids:
-            doc = self.get_document(company_id, UUID(did))
-            if not doc:
-                raise HTTPException(
-                    status_code=404, detail=f"Document {did} not found"
-                )
-            reader = PdfReader(doc.file_path)
-            for page in reader.pages:
-                writer.add_page(page)
-            doc_names.append(doc.name)
-
         new_id = uuid.uuid4()
-        new_dir = self._document_dir(company_id, new_id)
-        file_path = os.path.join(new_dir, "document.pdf")
 
-        with open(file_path, "wb") as fh:
-            writer.write(fh)
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            writer = PdfWriter()
+            doc_names: list[str] = []
 
-        page_count = len(writer.pages)
-        file_size = os.path.getsize(file_path)
+            for i, did in enumerate(document_ids):
+                doc = self.get_document(company_id, UUID(did))
+                if not doc:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"Document {did} not found",
+                    )
+                # Download each source PDF to temp
+                src_path = os.path.join(tmpdir, f"src_{i}.pdf")
+                with open(src_path, "wb") as fh:
+                    fh.write(self.storage.read(doc.file_path))
+                reader = PdfReader(src_path)
+                for page in reader.pages:
+                    writer.add_page(page)
+                doc_names.append(doc.name)
 
-        thumb_path = os.path.join(new_dir, "thumbnail.png")
-        self._generate_thumbnail(file_path, thumb_path)
+            merged_path = os.path.join(tmpdir, "document.pdf")
+            with open(merged_path, "wb") as fh:
+                writer.write(fh)
+
+            pdf_key, file_size, page_count, thumb_key = (
+                self._persist_pdf_and_thumb(
+                    company_id, new_id, merged_path, tmpdir
+                )
+            )
 
         label = name or f"Merged - {', '.join(doc_names[:3])}"
         doc = PdfDocument(
@@ -403,13 +457,13 @@ class PdfEditorService:
             company_id=company_id,
             created_by=user_id,
             name=label,
-            file_path=file_path,
+            file_path=pdf_key,
             file_size=file_size,
             page_count=page_count,
             mime_type="application/pdf",
             source_type="merge",
             annotations=[],
-            thumbnail_path=thumb_path if os.path.exists(thumb_path) else None,
+            thumbnail_path=thumb_key,
         )
         self.db.add(doc)
         self.db.commit()
@@ -419,29 +473,47 @@ class PdfEditorService:
     def reorder_pages(
         self, company_id: UUID, document_id: UUID, page_order: list[int]
     ) -> PdfDocument:
-        """Reorder pages using 0-indexed page_order list."""
-        from pypdf import PdfReader, PdfWriter  # type: ignore
+        from pypdf import PdfReader, PdfWriter
 
         doc = self.get_document_or_404(company_id, document_id)
-        reader = PdfReader(doc.file_path)
 
-        if sorted(page_order) != list(range(len(reader.pages))):
-            raise HTTPException(
-                status_code=400,
-                detail="page_order must be a permutation of 0-indexed page indices",
-            )
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            local_path = os.path.join(tmpdir, "document.pdf")
+            with open(local_path, "wb") as fh:
+                fh.write(self.storage.read(doc.file_path))
 
-        writer = PdfWriter()
-        for idx in page_order:
-            writer.add_page(reader.pages[idx])
+            reader = PdfReader(local_path)
+            if sorted(page_order) != list(range(len(reader.pages))):
+                raise HTTPException(
+                    status_code=400,
+                    detail="page_order must be a permutation of "
+                    "0-indexed page indices",
+                )
 
-        with open(doc.file_path, "wb") as fh:
-            writer.write(fh)
+            writer = PdfWriter()
+            for idx in page_order:
+                writer.add_page(reader.pages[idx])
 
-        if doc.thumbnail_path:
-            self._generate_thumbnail(doc.file_path, doc.thumbnail_path)
+            with open(local_path, "wb") as fh:
+                writer.write(fh)
 
-        doc.file_size = os.path.getsize(doc.file_path)
+            # Persist updated PDF
+            with open(local_path, "rb") as fh:
+                self.storage.write(
+                    doc.file_path, fh.read(), "application/pdf"
+                )
+
+            # Regenerate thumbnail
+            if doc.thumbnail_path:
+                thumb_local = os.path.join(tmpdir, "thumbnail.png")
+                if self._generate_thumbnail(local_path, thumb_local):
+                    with open(thumb_local, "rb") as fh:
+                        self.storage.write(
+                            doc.thumbnail_path, fh.read(), "image/png"
+                        )
+
+            doc.file_size = os.path.getsize(local_path)
+
         doc.updated_at = datetime.utcnow()
         self.db.commit()
         self.db.refresh(doc)
@@ -450,32 +522,48 @@ class PdfEditorService:
     def delete_pages(
         self, company_id: UUID, document_id: UUID, page_numbers: list[int]
     ) -> PdfDocument:
-        """Remove pages by 1-indexed page number list."""
-        from pypdf import PdfReader, PdfWriter  # type: ignore
+        from pypdf import PdfReader, PdfWriter
 
         doc = self.get_document_or_404(company_id, document_id)
-        reader = PdfReader(doc.file_path)
-        total = len(reader.pages)
 
-        to_delete = {p - 1 for p in page_numbers}
-        remaining = [i for i in range(total) if i not in to_delete]
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            local_path = os.path.join(tmpdir, "document.pdf")
+            with open(local_path, "wb") as fh:
+                fh.write(self.storage.read(doc.file_path))
 
-        if not remaining:
-            raise HTTPException(
-                status_code=400, detail="Cannot delete all pages from a document"
-            )
+            reader = PdfReader(local_path)
+            total = len(reader.pages)
+            to_delete = {p - 1 for p in page_numbers}
+            remaining = [i for i in range(total) if i not in to_delete]
 
-        writer = PdfWriter()
-        for idx in remaining:
-            writer.add_page(reader.pages[idx])
+            if not remaining:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot delete all pages from a document",
+                )
 
-        with open(doc.file_path, "wb") as fh:
-            writer.write(fh)
+            writer = PdfWriter()
+            for idx in remaining:
+                writer.add_page(reader.pages[idx])
 
-        doc.page_count = len(remaining)
-        doc.file_size = os.path.getsize(doc.file_path)
-        if doc.thumbnail_path:
-            self._generate_thumbnail(doc.file_path, doc.thumbnail_path)
+            with open(local_path, "wb") as fh:
+                writer.write(fh)
+
+            with open(local_path, "rb") as fh:
+                self.storage.write(
+                    doc.file_path, fh.read(), "application/pdf"
+                )
+
+            if doc.thumbnail_path:
+                thumb_local = os.path.join(tmpdir, "thumbnail.png")
+                if self._generate_thumbnail(local_path, thumb_local):
+                    with open(thumb_local, "rb") as fh:
+                        self.storage.write(
+                            doc.thumbnail_path, fh.read(), "image/png"
+                        )
+
+            doc.page_count = len(remaining)
+            doc.file_size = os.path.getsize(local_path)
 
         doc.updated_at = datetime.utcnow()
         self.db.commit()
@@ -485,36 +573,49 @@ class PdfEditorService:
     def rotate_pages(
         self, company_id: UUID, document_id: UUID, rotations: dict[str, int]
     ) -> PdfDocument:
-        """Rotate selected pages.
-
-        rotations: {"1": 90, "3": 180}  (1-indexed page number → clockwise degrees)
-        Accepted degree values: 90, 180, 270.
-        """
-        from pypdf import PdfReader, PdfWriter  # type: ignore
+        from pypdf import PdfReader, PdfWriter
 
         doc = self.get_document_or_404(company_id, document_id)
-        reader = PdfReader(doc.file_path)
-        writer = PdfWriter()
 
-        for i, page in enumerate(reader.pages):
-            key = str(i + 1)
-            if key in rotations:
-                degrees = rotations[key]
-                if degrees not in (90, 180, 270):
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Invalid rotation {degrees} for page {key}. Use 90, 180, or 270.",
-                    )
-                page.rotate(degrees)
-            writer.add_page(page)
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            local_path = os.path.join(tmpdir, "document.pdf")
+            with open(local_path, "wb") as fh:
+                fh.write(self.storage.read(doc.file_path))
 
-        with open(doc.file_path, "wb") as fh:
-            writer.write(fh)
+            reader = PdfReader(local_path)
+            writer = PdfWriter()
 
-        if doc.thumbnail_path:
-            self._generate_thumbnail(doc.file_path, doc.thumbnail_path)
+            for i, page in enumerate(reader.pages):
+                key = str(i + 1)
+                if key in rotations:
+                    degrees = rotations[key]
+                    if degrees not in (90, 180, 270):
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Invalid rotation {degrees} for "
+                            f"page {key}. Use 90, 180, or 270.",
+                        )
+                    page.rotate(degrees)
+                writer.add_page(page)
 
-        doc.file_size = os.path.getsize(doc.file_path)
+            with open(local_path, "wb") as fh:
+                writer.write(fh)
+
+            with open(local_path, "rb") as fh:
+                self.storage.write(
+                    doc.file_path, fh.read(), "application/pdf"
+                )
+
+            if doc.thumbnail_path:
+                thumb_local = os.path.join(tmpdir, "thumbnail.png")
+                if self._generate_thumbnail(local_path, thumb_local):
+                    with open(thumb_local, "rb") as fh:
+                        self.storage.write(
+                            doc.thumbnail_path, fh.read(), "image/png"
+                        )
+
+            doc.file_size = os.path.getsize(local_path)
+
         doc.updated_at = datetime.utcnow()
         self.db.commit()
         self.db.refresh(doc)
@@ -527,7 +628,6 @@ class PdfEditorService:
     def save_annotations(
         self, company_id: UUID, document_id: UUID, annotations: list
     ) -> PdfDocument:
-        """Persist annotation list as JSON on the document record."""
         doc = self.get_document_or_404(company_id, document_id)
         doc.annotations = annotations
         flag_modified(doc, "annotations")
@@ -536,80 +636,85 @@ class PdfEditorService:
         self.db.refresh(doc)
         return doc
 
-    def flatten_annotations(self, company_id: UUID, document_id: UUID) -> str:
+    def flatten_annotations(
+        self, company_id: UUID, document_id: UUID
+    ) -> bytes:
         """Burn text annotations into the PDF pages.
 
-        Returns the path to a new 'flattened.pdf' inside the document
-        directory.  If the document has no annotations the original
-        file_path is returned unchanged.
+        Returns the flattened PDF as bytes. If no annotations exist the
+        original PDF bytes are returned unchanged.
         """
-        from pypdf import PdfReader, PdfWriter  # type: ignore
-        from reportlab.pdfgen import canvas as rl_canvas  # type: ignore
+        from pypdf import PdfReader, PdfWriter
+        from reportlab.pdfgen import canvas as rl_canvas
 
         doc = self.get_document_or_404(company_id, document_id)
+        pdf_data = self.storage.read(doc.file_path)
 
         if not doc.annotations:
-            return doc.file_path
+            return pdf_data
 
-        reader = PdfReader(doc.file_path)
-        writer = PdfWriter()
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            local_path = os.path.join(tmpdir, "document.pdf")
+            with open(local_path, "wb") as fh:
+                fh.write(pdf_data)
 
-        by_page: dict[int, list] = {}
-        for ann in doc.annotations:
-            pg = ann.get("page", 0)
-            by_page.setdefault(pg, []).append(ann)
+            reader = PdfReader(local_path)
+            writer = PdfWriter()
 
-        for i, page in enumerate(reader.pages):
-            page_anns = by_page.get(i, [])
-            if page_anns:
-                media_box = page.mediabox
-                pw = float(media_box.width)
-                ph = float(media_box.height)
+            by_page: dict[int, list] = {}
+            for ann in doc.annotations:
+                pg = ann.get("page", 0)
+                by_page.setdefault(pg, []).append(ann)
 
-                packet = BytesIO()
-                c = rl_canvas.Canvas(packet, pagesize=(pw, ph))
+            for i, page in enumerate(reader.pages):
+                page_anns = by_page.get(i, [])
+                if page_anns:
+                    media_box = page.mediabox
+                    pw = float(media_box.width)
+                    ph = float(media_box.height)
 
-                for ann in page_anns:
-                    ann_type = ann.get("type")
-                    if ann_type == "text":
-                        style = ann.get("style") or {}
-                        font_size = style.get("font_size") or 12
-                        color = style.get("color") or "#000000"
+                    packet = BytesIO()
+                    c = rl_canvas.Canvas(packet, pagesize=(pw, ph))
 
-                        # Parse hex color → RGB floats
-                        color = color.lstrip("#")
-                        if len(color) == 6:
-                            r = int(color[0:2], 16) / 255
-                            g = int(color[2:4], 16) / 255
-                            b = int(color[4:6], 16) / 255
-                        else:
-                            r = g = b = 0.0
+                    for ann in page_anns:
+                        ann_type = ann.get("type")
+                        if ann_type == "text":
+                            style = ann.get("style") or {}
+                            font_size = style.get("font_size") or 12
+                            color = style.get("color") or "#000000"
 
-                        c.setFillColorRGB(r, g, b)
-                        c.setFont("Helvetica", font_size)
+                            color = color.lstrip("#")
+                            if len(color) == 6:
+                                r = int(color[0:2], 16) / 255
+                                g = int(color[2:4], 16) / 255
+                                b = int(color[4:6], 16) / 255
+                            else:
+                                r = g = b = 0.0
 
-                        x = ann.get("x", 0)
-                        # PDF coordinate origin is bottom-left; annotation Y is top-down
-                        y = ph - ann.get("y", 0) - font_size
-                        c.drawString(x, y, ann.get("content") or "")
+                            c.setFillColorRGB(r, g, b)
+                            c.setFont("Helvetica", font_size)
 
-                c.save()
-                packet.seek(0)
+                            x = ann.get("x", 0)
+                            y = ph - ann.get("y", 0) - font_size
+                            c.drawString(
+                                x, y, ann.get("content") or ""
+                            )
 
-                overlay_reader = PdfReader(packet)
-                page.merge_page(overlay_reader.pages[0])
+                    c.save()
+                    packet.seek(0)
+                    overlay_reader = PdfReader(packet)
+                    page.merge_page(overlay_reader.pages[0])
 
-            writer.add_page(page)
+                writer.add_page(page)
 
-        doc_dir = os.path.dirname(doc.file_path)
-        flat_path = os.path.join(doc_dir, "flattened.pdf")
-        with open(flat_path, "wb") as fh:
-            writer.write(fh)
-
-        return flat_path
+            flat_path = os.path.join(tmpdir, "flattened.pdf")
+            with open(flat_path, "wb") as fh:
+                writer.write(fh)
+            with open(flat_path, "rb") as fh:
+                return fh.read()
 
     # ------------------------------------------------------------------
-    # Multi-image → PDF
+    # Multi-image -> PDF
     # ------------------------------------------------------------------
 
     def images_to_pdf(
@@ -619,74 +724,68 @@ class PdfEditorService:
         files: list[UploadFile],
         name: Optional[str] = None,
     ) -> PdfDocument:
-        """Convert a list of uploaded images into a single multi-page PDF
-        (one image per page, letter size, centred).
-        """
-        from PIL import Image, ImageOps  # type: ignore
-        from reportlab.lib.pagesizes import letter  # type: ignore
-        from reportlab.pdfgen import canvas as rl_canvas  # type: ignore
+        from PIL import Image, ImageOps
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas as rl_canvas
 
         doc_id = uuid.uuid4()
-        doc_dir = self._document_dir(company_id, doc_id)
-        file_path = os.path.join(doc_dir, "document.pdf")
 
-        page_w, page_h = letter
-        c = rl_canvas.Canvas(file_path, pagesize=letter)
-        page_count = 0
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            pdf_path = os.path.join(tmpdir, "document.pdf")
+            page_w, page_h = letter
+            c = rl_canvas.Canvas(pdf_path, pagesize=letter)
+            page_count = 0
 
-        for upload_file in files:
-            content = upload_file.file.read()
-            if not content:
-                continue
+            for upload_file in files:
+                content = upload_file.file.read()
+                if not content:
+                    continue
 
-            img = Image.open(BytesIO(content))
-            # Apply EXIF orientation (phone photos are often rotated)
-            img = ImageOps.exif_transpose(img)
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+                img = Image.open(BytesIO(content))
+                img = ImageOps.exif_transpose(img)
+                if img.mode in ("RGBA", "P"):
+                    img = img.convert("RGB")
 
-            temp_path = os.path.join(doc_dir, f"_tmp_{page_count}.jpg")
-            img.save(temp_path, "JPEG", quality=95)
+                temp_img = os.path.join(tmpdir, f"_tmp_{page_count}.jpg")
+                img.save(temp_img, "JPEG", quality=95)
+                img_w, img_h = img.size
+                img.close()
 
-            img_w, img_h = img.size
-            img.close()
+                scale = min(page_w / img_w, page_h / img_h, 1.0)
+                draw_w, draw_h = img_w * scale, img_h * scale
+                x = (page_w - draw_w) / 2
+                y = (page_h - draw_h) / 2
 
-            scale = min(page_w / img_w, page_h / img_h, 1.0)
-            draw_w, draw_h = img_w * scale, img_h * scale
-            x = (page_w - draw_w) / 2
-            y = (page_h - draw_h) / 2
+                if page_count > 0:
+                    c.showPage()
+                c.drawImage(temp_img, x, y, draw_w, draw_h)
+                page_count += 1
 
-            if page_count > 0:
-                c.showPage()
-            c.drawImage(temp_path, x, y, draw_w, draw_h)
-            page_count += 1
+            if page_count == 0:
+                raise HTTPException(
+                    status_code=400, detail="No valid images provided"
+                )
 
-            try:
-                os.remove(temp_path)
-            except OSError:
-                pass
+            c.save()
 
-        if page_count == 0:
-            raise HTTPException(status_code=400, detail="No valid images provided")
-
-        c.save()
-
-        file_size = os.path.getsize(file_path)
-        thumb_path = os.path.join(doc_dir, "thumbnail.png")
-        self._generate_thumbnail(file_path, thumb_path)
+            pdf_key, file_size, pc, thumb_key = (
+                self._persist_pdf_and_thumb(
+                    company_id, doc_id, pdf_path, tmpdir
+                )
+            )
 
         doc = PdfDocument(
             id=doc_id,
             company_id=company_id,
             created_by=user_id,
             name=name or "Photos PDF",
-            file_path=file_path,
+            file_path=pdf_key,
             file_size=file_size,
             page_count=page_count,
             mime_type="application/pdf",
             source_type="convert",
             annotations=[],
-            thumbnail_path=thumb_path if os.path.exists(thumb_path) else None,
+            thumbnail_path=thumb_key,
         )
         self.db.add(doc)
         self.db.commit()
@@ -704,11 +803,10 @@ class PdfEditorService:
         estimate_id: str,
         template: str = "classic",
     ) -> PdfDocument:
-        """Generate an estimate PDF and import it as a PdfDocument."""
-        from app.core.pdf_generator import generate_estimate_pdf  # type: ignore
-        from app.domains.estimate.models import Estimate  # type: ignore
-        from app.domains.estimate.api import _prepare_estimate_pdf_data  # type: ignore
-        from app.domains.company.models import Company  # type: ignore
+        from app.core.pdf_generator import generate_estimate_pdf
+        from app.domains.estimate.models import Estimate
+        from app.domains.estimate.api import _prepare_estimate_pdf_data
+        from app.domains.company.models import Company
 
         estimate = (
             self.db.query(Estimate)
@@ -719,41 +817,52 @@ class PdfEditorService:
             .first()
         )
         if not estimate:
-            raise HTTPException(status_code=404, detail="Estimate not found")
+            raise HTTPException(
+                status_code=404, detail="Estimate not found"
+            )
 
-        company = self.db.query(Company).filter(Company.id == company_id).first()
+        company = (
+            self.db.query(Company)
+            .filter(Company.id == company_id)
+            .first()
+        )
         if not company:
-            raise HTTPException(status_code=404, detail="Company not found")
+            raise HTTPException(
+                status_code=404, detail="Company not found"
+            )
 
         pdf_data = _prepare_estimate_pdf_data(estimate, company, self.db)
         pdf_bytes: bytes = generate_estimate_pdf(pdf_data, template)
 
         doc_id = uuid.uuid4()
-        doc_dir = self._document_dir(company_id, doc_id)
-        file_path = os.path.join(doc_dir, "document.pdf")
 
-        with open(file_path, "wb") as fh:
-            fh.write(pdf_bytes)
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            pdf_path = os.path.join(tmpdir, "document.pdf")
+            with open(pdf_path, "wb") as fh:
+                fh.write(pdf_bytes)
 
-        page_count = self._page_count(file_path)
-        file_size = os.path.getsize(file_path)
-        thumb_path = os.path.join(doc_dir, "thumbnail.png")
-        self._generate_thumbnail(file_path, thumb_path)
+            pdf_key, file_size, page_count, thumb_key = (
+                self._persist_pdf_and_thumb(
+                    company_id, doc_id, pdf_path, tmpdir
+                )
+            )
 
-        est_number = getattr(estimate, "estimate_number", None) or estimate_id
+        est_number = (
+            getattr(estimate, "estimate_number", None) or estimate_id
+        )
         doc = PdfDocument(
             id=doc_id,
             company_id=company_id,
             created_by=user_id,
             name=f"Estimate {est_number}",
-            file_path=file_path,
+            file_path=pdf_key,
             file_size=file_size,
             page_count=page_count,
             mime_type="application/pdf",
             source_type="estimate",
             source_id=UUID(estimate_id),
             annotations=[],
-            thumbnail_path=thumb_path if os.path.exists(thumb_path) else None,
+            thumbnail_path=thumb_key,
         )
         self.db.add(doc)
         self.db.commit()
@@ -767,11 +876,10 @@ class PdfEditorService:
         invoice_id: str,
         template: str = "classic",
     ) -> PdfDocument:
-        """Generate an invoice PDF and import it as a PdfDocument."""
-        from app.core.pdf_generator import generate_invoice_pdf  # type: ignore
-        from app.domains.invoice.models import Invoice  # type: ignore
-        from app.domains.invoice.api import _prepare_invoice_pdf_data  # type: ignore
-        from app.domains.company.models import Company  # type: ignore
+        from app.core.pdf_generator import generate_invoice_pdf
+        from app.domains.invoice.models import Invoice
+        from app.domains.invoice.api import _prepare_invoice_pdf_data
+        from app.domains.company.models import Company
 
         invoice = (
             self.db.query(Invoice)
@@ -782,41 +890,52 @@ class PdfEditorService:
             .first()
         )
         if not invoice:
-            raise HTTPException(status_code=404, detail="Invoice not found")
+            raise HTTPException(
+                status_code=404, detail="Invoice not found"
+            )
 
-        company = self.db.query(Company).filter(Company.id == company_id).first()
+        company = (
+            self.db.query(Company)
+            .filter(Company.id == company_id)
+            .first()
+        )
         if not company:
-            raise HTTPException(status_code=404, detail="Company not found")
+            raise HTTPException(
+                status_code=404, detail="Company not found"
+            )
 
         pdf_data = _prepare_invoice_pdf_data(invoice, company, self.db)
         pdf_bytes: bytes = generate_invoice_pdf(pdf_data, template)
 
         doc_id = uuid.uuid4()
-        doc_dir = self._document_dir(company_id, doc_id)
-        file_path = os.path.join(doc_dir, "document.pdf")
 
-        with open(file_path, "wb") as fh:
-            fh.write(pdf_bytes)
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            pdf_path = os.path.join(tmpdir, "document.pdf")
+            with open(pdf_path, "wb") as fh:
+                fh.write(pdf_bytes)
 
-        page_count = self._page_count(file_path)
-        file_size = os.path.getsize(file_path)
-        thumb_path = os.path.join(doc_dir, "thumbnail.png")
-        self._generate_thumbnail(file_path, thumb_path)
+            pdf_key, file_size, page_count, thumb_key = (
+                self._persist_pdf_and_thumb(
+                    company_id, doc_id, pdf_path, tmpdir
+                )
+            )
 
-        inv_number = getattr(invoice, "invoice_number", None) or invoice_id
+        inv_number = (
+            getattr(invoice, "invoice_number", None) or invoice_id
+        )
         doc = PdfDocument(
             id=doc_id,
             company_id=company_id,
             created_by=user_id,
             name=f"Invoice {inv_number}",
-            file_path=file_path,
+            file_path=pdf_key,
             file_size=file_size,
             page_count=page_count,
             mime_type="application/pdf",
             source_type="invoice",
             source_id=UUID(invoice_id),
             annotations=[],
-            thumbnail_path=thumb_path if os.path.exists(thumb_path) else None,
+            thumbnail_path=thumb_key,
         )
         self.db.add(doc)
         self.db.commit()
@@ -829,7 +948,6 @@ class PdfEditorService:
         user_id: UUID,
         company_document_id: str,
     ) -> PdfDocument:
-        """Copy a company library document into the user's working documents."""
         company_doc = (
             self.db.query(CompanyDocument)
             .filter(
@@ -845,28 +963,34 @@ class PdfEditorService:
             )
 
         new_id = uuid.uuid4()
-        new_dir = self._document_dir(company_id, new_id)
-        new_file = os.path.join(new_dir, "document.pdf")
-        shutil.copy2(company_doc.file_path, new_file)
 
-        new_thumb: Optional[str] = None
-        if company_doc.thumbnail_path and os.path.exists(company_doc.thumbnail_path):
-            new_thumb = os.path.join(new_dir, "thumbnail.png")
-            shutil.copy2(company_doc.thumbnail_path, new_thumb)
+        # Copy PDF
+        new_pdf_key = self._key(company_id, new_id, "document.pdf")
+        pdf_data = self.storage.read(company_doc.file_path)
+        self.storage.write(new_pdf_key, pdf_data, "application/pdf")
+
+        # Copy thumbnail
+        new_thumb_key: Optional[str] = None
+        if company_doc.thumbnail_path and self.storage.exists(
+            company_doc.thumbnail_path
+        ):
+            new_thumb_key = self._key(company_id, new_id, "thumbnail.png")
+            thumb_data = self.storage.read(company_doc.thumbnail_path)
+            self.storage.write(new_thumb_key, thumb_data, "image/png")
 
         doc = PdfDocument(
             id=new_id,
             company_id=company_id,
             created_by=user_id,
             name=company_doc.name,
-            file_path=new_file,
+            file_path=new_pdf_key,
             file_size=company_doc.file_size,
             page_count=company_doc.page_count,
             mime_type=company_doc.mime_type,
             source_type="company_doc",
             source_id=UUID(company_document_id),
             annotations=[],
-            thumbnail_path=new_thumb,
+            thumbnail_path=new_thumb_key,
         )
         self.db.add(doc)
         self.db.commit()
@@ -895,42 +1019,44 @@ class CompanyDocumentService:
 
     def __init__(self, db: Session):
         self.db = db
+        self.storage: StorageBackend = get_storage()
 
     # ------------------------------------------------------------------
-    # Internal helpers
+    # Key helpers
     # ------------------------------------------------------------------
 
-    def _upload_dir(self, company_id: UUID) -> str:
-        path = os.path.join(
-            settings.STORAGE_BASE_DIR, str(company_id), "company-documents"
-        )
-        os.makedirs(path, exist_ok=True)
-        return path
+    @staticmethod
+    def _key(company_id: UUID, doc_id: UUID, filename: str) -> str:
+        return f"{company_id}/company-documents/{doc_id}/{filename}"
 
-    def _document_dir(self, company_id: UUID, document_id: UUID) -> str:
-        path = os.path.join(self._upload_dir(company_id), str(document_id))
-        os.makedirs(path, exist_ok=True)
-        return path
+    # ------------------------------------------------------------------
+    # Local processing helpers
+    # ------------------------------------------------------------------
 
-    def _generate_thumbnail(self, file_path: str, output_path: str) -> Optional[str]:
+    def _generate_thumbnail(
+        self, pdf_local_path: str, thumb_local_path: str
+    ) -> bool:
         try:
-            from pdf2image import convert_from_path  # type: ignore
+            from pdf2image import convert_from_path
 
             images = convert_from_path(
-                file_path, first_page=1, last_page=1, size=(300, None)
+                pdf_local_path,
+                first_page=1,
+                last_page=1,
+                size=(300, None),
             )
             if images:
-                images[0].save(output_path, "PNG")
-                return output_path
+                images[0].save(thumb_local_path, "PNG")
+                return True
         except Exception:
             pass
-        return None
+        return False
 
-    def _page_count(self, file_path: str) -> int:
+    @staticmethod
+    def _page_count(pdf_local_path: str) -> int:
         try:
-            from pypdf import PdfReader  # type: ignore
-
-            return len(PdfReader(file_path).pages)
+            from pypdf import PdfReader
+            return len(PdfReader(pdf_local_path).pages)
         except Exception:
             return 1
 
@@ -948,31 +1074,47 @@ class CompanyDocumentService:
         category: Optional[str] = None,
         tags: Optional[list[str]] = None,
     ) -> CompanyDocument:
-        """Upload a PDF to the company document library."""
         if file.content_type not in ALLOWED_UPLOAD_TYPES:
             raise HTTPException(
                 status_code=400,
-                detail=f"Only PDF files are accepted. Got: {file.content_type}",
+                detail=(
+                    f"Only PDF files are accepted. "
+                    f"Got: {file.content_type}"
+                ),
             )
 
         content = file.file.read()
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(
-                status_code=400, detail="File too large. Maximum size is 50 MB."
+                status_code=400,
+                detail="File too large. Maximum size is 50 MB.",
             )
 
         doc_id = uuid.uuid4()
-        doc_dir = self._document_dir(company_id, doc_id)
-        file_path = os.path.join(doc_dir, "document.pdf")
 
-        with open(file_path, "wb") as fh:
-            fh.write(content)
+        with tempfile.TemporaryDirectory(prefix="scopeit_") as tmpdir:
+            pdf_path = os.path.join(tmpdir, "document.pdf")
+            with open(pdf_path, "wb") as fh:
+                fh.write(content)
 
-        page_count = self._page_count(file_path)
-        file_size = os.path.getsize(file_path)
+            page_count = self._page_count(pdf_path)
+            file_size = len(content)
 
-        thumb_path = os.path.join(doc_dir, "thumbnail.png")
-        self._generate_thumbnail(file_path, thumb_path)
+            # Persist PDF
+            pdf_key = self._key(company_id, doc_id, "document.pdf")
+            self.storage.write(pdf_key, content, "application/pdf")
+
+            # Thumbnail
+            thumb_key: Optional[str] = None
+            thumb_local = os.path.join(tmpdir, "thumbnail.png")
+            if self._generate_thumbnail(pdf_path, thumb_local):
+                thumb_key = self._key(
+                    company_id, doc_id, "thumbnail.png"
+                )
+                with open(thumb_local, "rb") as fh:
+                    self.storage.write(
+                        thumb_key, fh.read(), "image/png"
+                    )
 
         doc = CompanyDocument(
             id=doc_id,
@@ -980,14 +1122,14 @@ class CompanyDocumentService:
             uploaded_by=user_id,
             name=name,
             description=description,
-            file_path=file_path,
+            file_path=pdf_key,
             file_size=file_size,
             mime_type="application/pdf",
             page_count=page_count,
             category=category,
             tags=tags or [],
             use_count=0,
-            thumbnail_path=thumb_path if os.path.exists(thumb_path) else None,
+            thumbnail_path=thumb_key,
         )
         self.db.add(doc)
         self.db.commit()
@@ -1007,7 +1149,9 @@ class CompanyDocumentService:
             .first()
         )
 
-    def get_or_404(self, company_id: UUID, doc_id: UUID) -> CompanyDocument:
+    def get_or_404(
+        self, company_id: UUID, doc_id: UUID
+    ) -> CompanyDocument:
         doc = self.get(company_id, doc_id)
         if not doc:
             raise HTTPException(
@@ -1028,7 +1172,9 @@ class CompanyDocumentService:
             CompanyDocument.is_active == True,
         )
         if search:
-            query = query.filter(CompanyDocument.name.ilike(f"%{search}%"))
+            query = query.filter(
+                CompanyDocument.name.ilike(f"%{search}%")
+            )
         if category:
             query = query.filter(CompanyDocument.category == category)
 
@@ -1066,7 +1212,6 @@ class CompanyDocumentService:
         return doc
 
     def delete(self, company_id: UUID, doc_id: UUID) -> bool:
-        """Soft-delete a company document."""
         doc = self.get(company_id, doc_id)
         if not doc:
             return False
@@ -1075,8 +1220,9 @@ class CompanyDocumentService:
         self.db.commit()
         return True
 
-    def increment_use_count(self, company_id: UUID, doc_id: UUID) -> None:
-        """Increment use_count and update last_used_at. Silent if not found."""
+    def increment_use_count(
+        self, company_id: UUID, doc_id: UUID
+    ) -> None:
         doc = self.get(company_id, doc_id)
         if doc:
             doc.use_count = (doc.use_count or 0) + 1

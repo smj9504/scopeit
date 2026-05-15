@@ -7,15 +7,24 @@ Document management, page operations, annotations, flattening, and import
 endpoints for the PDF Editor tool.
 """
 import io
-import os
+import tempfile
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.storage import get_storage
 from app.domains.tools.dependencies import require_tool_access
 from app.domains.user.models import User
 from app.domains.tools.modules.pdf_editor.service import PdfEditorService
@@ -28,8 +37,6 @@ from app.domains.tools.modules.pdf_editor.schemas import (
     PageDeleteRequest,
     PageReorderRequest,
     PageRotateRequest,
-    PdfDocumentListResponse,
-    PdfDocumentResponse,
     PdfDocumentUpdate,
 )
 
@@ -111,7 +118,7 @@ async def images_to_pdf(
 # Document CRUD
 # ---------------------------------------------------------------------------
 
-@router.get("/documents", )
+@router.get("/documents")
 async def list_documents(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
@@ -135,7 +142,7 @@ async def list_documents(
     }
 
 
-@router.get("/documents/{document_id}", )
+@router.get("/documents/{document_id}")
 async def get_document(
     document_id: UUID,
     db: Session = Depends(get_db),
@@ -150,7 +157,7 @@ async def get_document(
     return _to_response(doc)
 
 
-@router.patch("/documents/{document_id}", )
+@router.patch("/documents/{document_id}")
 async def update_document(
     document_id: UUID,
     body: PdfDocumentUpdate,
@@ -159,7 +166,10 @@ async def update_document(
 ):
     """Rename a document."""
     if body.name is None:
-        raise HTTPException(status_code=400, detail="At least one field must be provided.")
+        raise HTTPException(
+            status_code=400,
+            detail="At least one field must be provided.",
+        )
     service = PdfEditorService(db)
     doc = service.rename_document(
         company_id=current_user.company_id,
@@ -213,28 +223,32 @@ async def download_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(_gate),
 ):
-    """Download the PDF file. Pass flatten=true to burn annotations first."""
+    """Download the PDF file. Pass flatten=true to burn annotations."""
     service = PdfEditorService(db)
     doc = service.get_document_or_404(
         company_id=current_user.company_id,
         document_id=document_id,
     )
 
+    storage = get_storage()
+
     if flatten:
-        file_path = service.flatten_annotations(
+        content = service.flatten_annotations(
             company_id=current_user.company_id,
             document_id=document_id,
         )
     else:
-        file_path = doc.file_path
+        if not storage.exists(doc.file_path):
+            raise HTTPException(
+                status_code=404, detail="File not found"
+            )
+        content = storage.read(doc.file_path)
 
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found on disk")
-
-    safe_name = doc.name if doc.name.lower().endswith(".pdf") else f"{doc.name}.pdf"
-
-    with open(file_path, "rb") as fh:
-        content = fh.read()
+    safe_name = (
+        doc.name
+        if doc.name.lower().endswith(".pdf")
+        else f"{doc.name}.pdf"
+    )
 
     return StreamingResponse(
         io.BytesIO(content),
@@ -258,10 +272,16 @@ async def get_thumbnail(
         document_id=document_id,
     )
 
-    if not doc.thumbnail_path or not os.path.exists(doc.thumbnail_path):
-        raise HTTPException(status_code=404, detail="Thumbnail not available")
+    storage = get_storage()
+    if not doc.thumbnail_path or not storage.exists(doc.thumbnail_path):
+        raise HTTPException(
+            status_code=404, detail="Thumbnail not available"
+        )
 
-    return FileResponse(doc.thumbnail_path, media_type="image/png")
+    content = storage.read(doc.thumbnail_path)
+    return StreamingResponse(
+        io.BytesIO(content), media_type="image/png"
+    )
 
 
 @router.get("/documents/{document_id}/page/{page_num}")
@@ -284,15 +304,36 @@ async def get_page_image(
             detail=f"page_num must be between 1 and {doc.page_count}",
         )
 
-    try:
-        from pdf2image import convert_from_path  # type: ignore
+    storage = get_storage()
+    pdf_data = storage.read(doc.file_path)
 
-        images = convert_from_path(
-            doc.file_path,
+    try:
+        from pdf2image import convert_from_bytes
+
+        images = convert_from_bytes(
+            pdf_data,
             first_page=page_num,
             last_page=page_num,
             size=(1200, None),
         )
+    except ImportError:
+        # pdf2image not available - fall back to convert_from_path
+        import os
+        with tempfile.NamedTemporaryFile(
+            suffix=".pdf", delete=False
+        ) as tmp:
+            tmp.write(pdf_data)
+            tmp_path = tmp.name
+        try:
+            from pdf2image import convert_from_path
+            images = convert_from_path(
+                tmp_path,
+                first_page=page_num,
+                last_page=page_num,
+                size=(1200, None),
+            )
+        finally:
+            os.unlink(tmp_path)
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -300,7 +341,9 @@ async def get_page_image(
         ) from exc
 
     if not images:
-        raise HTTPException(status_code=404, detail="Page could not be rendered")
+        raise HTTPException(
+            status_code=404, detail="Page could not be rendered"
+        )
 
     buf = io.BytesIO()
     images[0].save(buf, format="PNG")
@@ -330,7 +373,7 @@ async def merge_documents(
     return _to_response(doc)
 
 
-@router.post("/documents/{document_id}/pages/reorder", )
+@router.post("/documents/{document_id}/pages/reorder")
 async def reorder_pages(
     document_id: UUID,
     body: PageReorderRequest,
@@ -347,7 +390,7 @@ async def reorder_pages(
     return _to_response(doc)
 
 
-@router.post("/documents/{document_id}/pages/delete", )
+@router.post("/documents/{document_id}/pages/delete")
 async def delete_pages(
     document_id: UUID,
     body: PageDeleteRequest,
@@ -364,7 +407,7 @@ async def delete_pages(
     return _to_response(doc)
 
 
-@router.post("/documents/{document_id}/pages/rotate", )
+@router.post("/documents/{document_id}/pages/rotate")
 async def rotate_pages(
     document_id: UUID,
     body: PageRotateRequest,
@@ -385,7 +428,7 @@ async def rotate_pages(
 # Annotations
 # ---------------------------------------------------------------------------
 
-@router.put("/documents/{document_id}/annotations", )
+@router.put("/documents/{document_id}/annotations")
 async def save_annotations(
     document_id: UUID,
     body: AnnotationSaveRequest,
@@ -416,19 +459,17 @@ async def flatten_document(
         document_id=document_id,
     )
 
-    flat_path = service.flatten_annotations(
+    content = service.flatten_annotations(
         company_id=current_user.company_id,
         document_id=document_id,
     )
 
-    if not os.path.exists(flat_path):
-        raise HTTPException(status_code=500, detail="Flattened file could not be created")
-
-    safe_name = doc.name if doc.name.lower().endswith(".pdf") else f"{doc.name}.pdf"
+    safe_name = (
+        doc.name
+        if doc.name.lower().endswith(".pdf")
+        else f"{doc.name}.pdf"
+    )
     flat_name = f"flattened-{safe_name}"
-
-    with open(flat_path, "rb") as fh:
-        content = fh.read()
 
     return StreamingResponse(
         io.BytesIO(content),

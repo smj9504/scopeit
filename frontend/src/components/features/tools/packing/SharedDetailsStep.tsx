@@ -4,7 +4,7 @@
  * Contains: Client Information, Company Override, Estimation Settings, O&P, Contingency.
  * Special Items have been moved to per-room configuration (RoomSpecialItems).
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Row,
   Col,
@@ -15,13 +15,20 @@ import {
   Radio,
   Space,
   Tooltip,
+  Button,
+  message,
+  Popconfirm,
+  Typography,
 } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
+import { InfoCircleOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons';
+
+const { Text } = Typography;
 import { colors, fonts, borderRadius } from '@/styles/theme';
 import { REGION_OPTIONS, DEFAULT_SETTINGS } from './constants';
+import { packingApi } from './packingApi';
 import CustomerSelector from '@/components/features/CustomerSelector';
 import type { CustomerData } from '@/components/features/CustomerSelector';
-import type { PackingSettings, ClientInfo, CompanyInfoOverride } from './types';
+import type { PackingSettings, ClientInfo, CompanyInfoOverride, SavedCompanyProfile } from './types';
 
 // ── Props ────────────────────────────────────────────────────────────────────
 
@@ -50,12 +57,69 @@ const SharedDetailsStep: React.FC<SharedDetailsStepProps> = ({
   const [showCompanyOverride, setShowCompanyOverride] = useState(
     !!(companyOverride.name || companyOverride.address || companyOverride.phone || companyOverride.email),
   );
+  const [profiles, setProfiles] = useState<SavedCompanyProfile[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | undefined>(undefined);
+
+  // Load profiles from DB on mount
+  useEffect(() => {
+    setProfilesLoading(true);
+    packingApi.getCompanyProfiles()
+      .then((loaded) => {
+        setProfiles(loaded);
+        // Auto-show the override section if profiles exist
+        if (loaded.length > 0 && !showCompanyOverride) {
+          setShowCompanyOverride(true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setProfilesLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patchSettings = (patch: Partial<PackingSettings>) =>
     setSettings((prev) => ({ ...prev, ...patch }));
 
-  const patchCompany = (patch: Partial<CompanyInfoOverride>) =>
+  const patchCompany = (patch: Partial<CompanyInfoOverride>) => {
     setCompanyOverride((prev) => ({ ...prev, ...patch }));
+    setSelectedProfileId(undefined);
+  };
+
+  const handleSelectProfile = useCallback((profileId: string) => {
+    const profile = profiles.find((p) => p.id === profileId);
+    if (!profile) return;
+    setCompanyOverride(profile.data);
+    setSelectedProfileId(profileId);
+    setShowCompanyOverride(true);
+  }, [profiles, setCompanyOverride]);
+
+  const handleSaveProfile = useCallback(async () => {
+    const label = companyOverride.name?.trim();
+    if (!label) {
+      message.warning('Enter a company name first.');
+      return;
+    }
+    try {
+      const saved = await packingApi.saveCompanyProfile(label, companyOverride);
+      // Refresh list
+      const updated = await packingApi.getCompanyProfiles();
+      setProfiles(updated);
+      setSelectedProfileId(saved.id);
+      message.success(`Saved "${label}"`);
+    } catch {
+      message.error('Failed to save profile.');
+    }
+  }, [companyOverride]);
+
+  const handleDeleteProfile = useCallback(async (profileId: string) => {
+    try {
+      await packingApi.deleteCompanyProfile(profileId);
+      setProfiles((prev) => prev.filter((p) => p.id !== profileId));
+      if (selectedProfileId === profileId) setSelectedProfileId(undefined);
+      message.success('Profile deleted');
+    } catch {
+      message.error('Failed to delete profile.');
+    }
+  }, [selectedProfileId]);
 
   // Convert ClientInfo <-> CustomerData for the CustomerSelector
   const customerData: CustomerData = {
@@ -224,6 +288,24 @@ const SharedDetailsStep: React.FC<SharedDetailsStepProps> = ({
           )}
         </div>
       </Col>
+      <Col xs={24} sm={12}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <Text style={{ fontSize: 13, fontFamily: fonts.body }}>Material Rate</Text>
+          <InputNumber
+            min={10}
+            max={40}
+            value={settings.material_rate ?? 25}
+            onChange={(val) => patchSettings({ material_rate: val ?? 25 })}
+            style={{ width: 100 }}
+            addonAfter="%"
+            step={5}
+            aria-label="Material rate"
+          />
+        </div>
+        <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
+          % of pack-out labor (industry: 15-25%)
+        </div>
+      </Col>
       <Col xs={24}>
         <div style={{ fontSize: 12, color: '#999' }}>
           Supplements are auto-detected based on room conditions
@@ -232,70 +314,88 @@ const SharedDetailsStep: React.FC<SharedDetailsStepProps> = ({
     </Row>
   );
 
-  // ── Compact mode: settings-only (for edit modal) ─────────────────────────
+  // ── Company Override block (shared between compact and full modes) ────────
 
-  if (compact) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        <section>
-          <CustomerSelector value={customerData} onChange={handleCustomerChange} />
-        </section>
-        <section>{estimationSettingsBlock}</section>
-        <section>{opContingencyBlock}</section>
-      </div>
-    );
-  }
-
-  // ── Full mode: wizard step with section titles ───────────────────────────
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-
-      {/* ── Client Information (CustomerSelector) ──── */}
-      <section>
-        {sectionTitle('Client Information')}
-        <CustomerSelector
-          value={customerData}
-          onChange={handleCustomerChange}
-        />
-      </section>
-
-      {/* ── Company Override ─────────────────────────────── */}
-      <section>
-        <div
+  const companyOverrideBlock = (
+    <section>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16,
+          paddingBottom: 8,
+          borderBottom: `1px solid ${colors.border}`,
+        }}
+      >
+        <h4
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 16,
-            paddingBottom: 8,
-            borderBottom: `1px solid ${colors.border}`,
+            fontFamily: fonts.heading,
+            fontSize: 15,
+            fontWeight: 700,
+            color: colors.textPrimary,
+            margin: 0,
           }}
         >
-          <h4
-            style={{
-              fontFamily: fonts.heading,
-              fontSize: 15,
-              fontWeight: 700,
-              color: colors.textPrimary,
-              margin: 0,
-            }}
-          >
-            Company Override
-          </h4>
-          <Space size={8}>
-            <span style={{ fontSize: 13, color: colors.textSecondary }}>
-              {showCompanyOverride ? 'Shown' : 'Hidden'}
-            </span>
-            <Switch
-              size="small"
-              checked={showCompanyOverride}
-              onChange={setShowCompanyOverride}
-              aria-label="Toggle company override"
+          Company Override
+        </h4>
+        <Space size={8}>
+          <span style={{ fontSize: 13, color: colors.textSecondary }}>
+            {showCompanyOverride ? 'Shown' : 'Hidden'}
+          </span>
+          <Switch
+            size="small"
+            checked={showCompanyOverride}
+            onChange={setShowCompanyOverride}
+            aria-label="Toggle company override"
+          />
+        </Space>
+      </div>
+      {showCompanyOverride && (
+        <>
+          {/* Saved profiles selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <Select
+              placeholder={profilesLoading ? 'Loading...' : 'Select saved company...'}
+              value={selectedProfileId}
+              onChange={handleSelectProfile}
+              loading={profilesLoading}
+              allowClear
+              onClear={() => {
+                setSelectedProfileId(undefined);
+                setCompanyOverride({});
+              }}
+              style={{ flex: 1 }}
+              size="middle"
+              options={profiles.map((p) => ({ value: p.id, label: p.label }))}
+              notFoundContent={
+                <span style={{ fontSize: 12, color: colors.textMuted }}>No saved profiles yet</span>
+              }
             />
-          </Space>
-        </div>
-        {showCompanyOverride && (
+            <Tooltip title="Save current as profile">
+              <Button
+                icon={<SaveOutlined />}
+                size="middle"
+                onClick={handleSaveProfile}
+                disabled={!companyOverride.name?.trim()}
+              />
+            </Tooltip>
+            {selectedProfileId && (
+              <Popconfirm
+                title="Delete this profile?"
+                onConfirm={() => handleDeleteProfile(selectedProfileId)}
+                okText="Delete"
+                cancelText="Cancel"
+              >
+                <Button
+                  icon={<DeleteOutlined />}
+                  size="middle"
+                  danger
+                />
+              </Popconfirm>
+            )}
+          </div>
+
           <Row gutter={[16, 14]}>
             <Col xs={24} sm={12}>
               {fieldLabel('Company Name')}
@@ -335,13 +435,47 @@ const SharedDetailsStep: React.FC<SharedDetailsStepProps> = ({
               />
             </Col>
           </Row>
-        )}
-        {!showCompanyOverride && (
-          <p style={{ fontSize: 13, color: colors.textMuted, margin: 0 }}>
-            Toggle on to override company info on the exported estimate.
-          </p>
-        )}
+        </>
+      )}
+      {!showCompanyOverride && (
+        <p style={{ fontSize: 13, color: colors.textMuted, margin: 0 }}>
+          Toggle on to override company info on the exported estimate.
+        </p>
+      )}
+    </section>
+  );
+
+  // ── Compact mode: settings-only (for edit modal) ─────────────────────────
+
+  if (compact) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+        <section>
+          <CustomerSelector value={customerData} onChange={handleCustomerChange} />
+        </section>
+        {companyOverrideBlock}
+        <section>{estimationSettingsBlock}</section>
+        <section>{opContingencyBlock}</section>
+      </div>
+    );
+  }
+
+  // ── Full mode: wizard step with section titles ───────────────────────────
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+      {/* ── Client Information (CustomerSelector) ──── */}
+      <section>
+        {sectionTitle('Client Information')}
+        <CustomerSelector
+          value={customerData}
+          onChange={handleCustomerChange}
+        />
       </section>
+
+      {/* ── Company Override ─────────────────────────────── */}
+      {companyOverrideBlock}
 
       {/* ── Estimation Settings ──────────────────────────── */}
       <section>

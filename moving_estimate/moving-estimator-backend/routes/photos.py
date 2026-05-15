@@ -61,8 +61,10 @@ from services.item_taxonomy import normalize_items_list
 from services.vision_tools import (
     PASS1_TOOL,
     PASS2_TOOL,
+    COMBINED_TOOL,
     build_pass1_tool_prompt,
     build_pass2_tool_prompt,
+    build_combined_tool_prompt,
     extract_tool_result,
 )
 
@@ -792,43 +794,25 @@ async def analyze_room_with_claude(
     existing_items: List[ExistingItem] | None = None,
     corrections_context: str = "",
 ) -> dict | None:
-    """Hybrid 2-pass room analysis: Tool Use + Taxonomy Normalization.
+    """Single-pass room analysis: identify items AND add packing details in one API call.
 
-    Pass 1 (vision + tool use):
-        Send images with report_room_contents tool schema.
-        Claude returns structured output with constrained category
-        enums and typed fields. No JSON parsing needed.
-        Then normalize item names via the packing taxonomy.
-
-    Pass 2 (text + tool use):
-        Send normalized item list with enrich_packing_details tool.
-        Claude returns packing method, materials (constrained to
-        valid keys), labor estimates, and flags.
-
-    This hybrid approach provides:
-    - Structural guarantees from tool schemas (no JSON parse failures)
-    - Category enum enforcement (always valid category values)
-    - Material key enforcement (always valid material keys)
-    - Consistent item names from taxonomy normalization
-    - Graceful fallback for novel items not in taxonomy
+    Uses COMBINED_TOOL which returns fully enriched items (identification +
+    packing details) from a single vision call, cutting latency by ~50%.
+    Taxonomy normalization is applied post-call at no extra API cost.
     """
     try:
         import anthropic
-        import json
+        import asyncio
 
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-        # ── Pass 1: Vision + Tool Use ─────────────────────────────
         per_image_limit = MAX_IMAGE_BYTES // max(len(images), 1)
         per_image_limit = max(per_image_limit, 1_000_000)
 
         content = []
         for img in images:
-            # Resolve URL/path references to base64 before compressing
             img = resolve_image_to_base64(img)
-            media_type, img_data = compress_image_base64(
-                img, max_bytes=per_image_limit
-            )
+            media_type, img_data = compress_image_base64(img, max_bytes=per_image_limit)
             content.append({
                 "type": "image",
                 "source": {
@@ -838,81 +822,29 @@ async def analyze_room_with_claude(
                 },
             })
 
-        pass1_prompt = build_pass1_tool_prompt(
-            room_name, len(images), existing_items
-        )
+        prompt = build_combined_tool_prompt(room_name, len(images), existing_items)
         if corrections_context:
-            pass1_prompt = pass1_prompt + corrections_context
-        content.append({"type": "text", "text": pass1_prompt})
+            prompt = prompt + corrections_context
+        content.append({"type": "text", "text": prompt})
 
-        pass1_msg = client.messages.create(
+        # Run synchronous SDK call in a thread to avoid blocking the event loop
+        result_msg = await asyncio.to_thread(
+            client.messages.create,
             model="claude-haiku-4-5-20251001",
-            max_tokens=4096,
-            tools=[PASS1_TOOL],
-            tool_choice={
-                "type": "tool",
-                "name": "report_room_contents",
-            },
+            max_tokens=6000,
+            tools=[COMBINED_TOOL],
+            tool_choice={"type": "tool", "name": "report_room_contents_with_packing"},
             messages=[{"role": "user", "content": content}],
         )
 
-        # Tool use returns structured data directly -- no JSON
-        # parsing needed. extract_tool_result pulls the input
-        # dict from the tool_use block.
-        pass1_result = extract_tool_result(pass1_msg)
-        if not pass1_result or not pass1_result.get("items"):
-            print(
-                "Pass 1 tool returned no items"
-            )
-            return pass1_result
+        result = extract_tool_result(result_msg)
+        if not result or not result.get("items"):
+            print("Combined tool returned no items")
+            return result
 
-        # ── Normalize: Taxonomy matching ──────────────────────────
-        # Map AI-generated free-text names to canonical packing
-        # names. This is deterministic and adds no API cost.
-        normalize_items_list(pass1_result["items"])
-
-        # ── Pass 2: Text-only + Tool Use ──────────────────────────
-        # Compact JSON (no indent) saves ~15% input tokens vs indent=2
-        items_json = json.dumps(pass1_result["items"])
-        pass2_prompt = build_pass2_tool_prompt(items_json)
-
-        pass2_msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=4096,  # was 8192; rooms with 20 items fit well under 3K tokens
-            tools=[PASS2_TOOL],
-            tool_choice={
-                "type": "tool",
-                "name": "enrich_packing_details",
-            },
-            messages=[
-                {"role": "user", "content": pass2_prompt}
-            ],
-        )
-
-        pass2_result = extract_tool_result(pass2_msg)
-
-        # ── Merge: Pass 1 metadata + Pass 2 enriched items ───────
-        if pass2_result and pass2_result.get("items"):
-            return {
-                "items": pass2_result["items"],
-                "density": pass1_result.get(
-                    "density", "normal"
-                ),
-                "room_size": pass1_result.get(
-                    "room_size", "large"
-                ),
-                "confidence": pass1_result.get(
-                    "confidence", 0.7
-                ),
-            }
-
-        # Pass 2 failed -- return Pass 1 items (already
-        # normalized, just missing packing details)
-        print(
-            "Pass 2 tool failed -- returning "
-            "Pass 1 items without packing details"
-        )
-        return pass1_result
+        # Normalize item names via taxonomy (deterministic, no API cost)
+        normalize_items_list(result["items"])
+        return result
 
     except Exception as e:
         print(f"Claude API error (room analysis): {e}")

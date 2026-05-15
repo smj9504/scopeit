@@ -8,28 +8,24 @@ Two routers:
   public_router - public (token-based) endpoints under /api/sign/
 """
 import io
-import logging
 import os
+import tempfile
 from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.storage import get_storage
 from app.domains.tools.dependencies import require_tool_access
 from app.domains.tools.modules.pdf_editor.models import SignRequest
 from app.domains.tools.modules.pdf_editor.schemas import (
-    SignAuditEventResponse,
     SignDeclineRequest,
     SignRequestCreate,
-    SignRequestListResponse,
-    SignRequestResponse,
     SignSubmitRequest,
-    SignViewResponse,
 )
 from app.domains.tools.modules.pdf_editor.sign_service import SignService
 from app.domains.user.models import User
@@ -48,16 +44,22 @@ _gate = require_tool_access("pdf_editor")
 # Helper
 # ---------------------------------------------------------------------------
 
-def _to_sign_response(req: SignRequest, include_sign_url: bool = False) -> dict:
+def _to_sign_response(
+    req: SignRequest, include_sign_url: bool = False
+) -> dict:
     resp = {
         "id": str(req.id),
         "documentId": str(req.document_id),
-        "documentName": req.document.name if req.document else None,
+        "documentName": (
+            req.document.name if req.document else None
+        ),
         "recipientEmail": req.recipient_email,
         "recipientName": req.recipient_name,
         "senderEmail": req.sender_email,
         "senderName": req.sender_name,
-        "customerId": str(req.customer_id) if req.customer_id else None,
+        "customerId": (
+            str(req.customer_id) if req.customer_id else None
+        ),
         "status": req.status,
         "signFields": req.sign_fields or [],
         "emailSubject": req.email_subject,
@@ -71,7 +73,9 @@ def _to_sign_response(req: SignRequest, include_sign_url: bool = False) -> dict:
         "updatedAt": req.updated_at,
     }
     if include_sign_url and req.access_token:
-        resp["sign_url"] = f"{settings.FRONTEND_URL}/sign/{req.access_token}"
+        resp["sign_url"] = (
+            f"{settings.FRONTEND_URL}/sign/{req.access_token}"
+        )
     return resp
 
 
@@ -88,6 +92,11 @@ async def create_sign_request(
 ):
     """Create a new sign request (status: draft)."""
     service = SignService(db)
+    sender_name = (
+        data.sender_name
+        if hasattr(data, "sender_name") and data.sender_name
+        else (current_user.full_name or current_user.email)
+    )
     sign_req = service.create_sign_request(
         company_id=current_user.company_id,
         user_id=current_user.id,
@@ -95,10 +104,11 @@ async def create_sign_request(
         recipient_email=data.recipient_email,
         recipient_name=data.recipient_name,
         sender_email=data.sender_email or current_user.email,
-        sender_name=data.sender_name if hasattr(data, "sender_name") and data.sender_name
-            else (current_user.full_name or current_user.email),
+        sender_name=sender_name,
         sign_fields=data.sign_fields,
-        customer_id=UUID(data.customer_id) if data.customer_id else None,
+        customer_id=(
+            UUID(data.customer_id) if data.customer_id else None
+        ),
         email_subject=data.email_subject,
         email_message=data.email_message,
         expires_in_days=data.expires_in_days,
@@ -136,14 +146,16 @@ async def get_sign_request(
     db: Session = Depends(get_db),
     current_user: User = Depends(_gate),
 ):
-    """Get a single sign request detail (includes document name)."""
+    """Get a single sign request detail."""
     service = SignService(db)
     sign_req = service.get_sign_request(
         company_id=current_user.company_id,
         request_id=request_id,
     )
     if not sign_req:
-        raise HTTPException(status_code=404, detail="Sign request not found")
+        raise HTTPException(
+            status_code=404, detail="Sign request not found"
+        )
     return _to_sign_response(sign_req)
 
 
@@ -161,7 +173,6 @@ async def send_sign_request(
         company_id=current_user.company_id,
         request_id=request_id,
     )
-    # Only include sign_url when email is not configured (dev fallback)
     return _to_sign_response(
         sign_req,
         include_sign_url=not email_service.is_configured(),
@@ -229,31 +240,45 @@ async def download_signed_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(_gate),
 ):
-    """Download the signed PDF once the request has been completed."""
+    """Download the signed PDF."""
     service = SignService(db)
     sign_req = service.get_sign_request(
         company_id=current_user.company_id,
         request_id=request_id,
     )
     if not sign_req:
-        raise HTTPException(status_code=404, detail="Sign request not found")
+        raise HTTPException(
+            status_code=404, detail="Sign request not found"
+        )
     if sign_req.status != "signed":
         raise HTTPException(
-            status_code=400, detail="Document has not been signed yet"
-        )
-    if not sign_req.signed_file_path or not os.path.exists(sign_req.signed_file_path):
-        raise HTTPException(
-            status_code=404, detail="Signed document file not found"
+            status_code=400,
+            detail="Document has not been signed yet",
         )
 
-    doc_name = sign_req.document.name if sign_req.document else "signed"
-    # Strip original extension to avoid names like "photo.jpg_signed.pdf"
+    storage = get_storage()
+    signed_key = sign_req.signed_file_path
+    if not signed_key or not storage.exists(signed_key):
+        raise HTTPException(
+            status_code=404,
+            detail="Signed document file not found",
+        )
+
+    content = storage.read(signed_key)
+    doc_name = (
+        sign_req.document.name if sign_req.document else "signed"
+    )
     base_name = os.path.splitext(doc_name)[0]
     filename = f"{base_name}_signed.pdf"
-    return FileResponse(
-        sign_req.signed_file_path,
+
+    return StreamingResponse(
+        io.BytesIO(content),
         media_type="application/pdf",
-        filename=filename,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{filename}"'
+            ),
+        },
     )
 
 
@@ -268,15 +293,14 @@ async def view_document(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """
-    View document metadata before signing (public, token-based).
-    Transitions status from 'sent' to 'viewed' on first access.
-    """
+    """View document metadata before signing (public, token-based)."""
     ip = request.client.host if request.client else ""
     user_agent = request.headers.get("user-agent", "")
 
     service = SignService(db)
-    sign_req = service.view_document(token=token, ip=ip, user_agent=user_agent)
+    sign_req = service.view_document(
+        token=token, ip=ip, user_agent=user_agent
+    )
 
     doc = sign_req.document
     company = sign_req.company
@@ -302,14 +326,13 @@ async def get_page_image(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """
-    Render a specific page (1-indexed) of the document as a PNG image.
-    Used by the public signing UI to display pages without exposing the PDF URL.
-    """
+    """Render a page of the document as PNG (public, token-based)."""
     service = SignService(db)
     sign_req = service.get_by_token(token)
     if not sign_req:
-        raise HTTPException(status_code=404, detail="Sign request not found")
+        raise HTTPException(
+            status_code=404, detail="Sign request not found"
+        )
     if sign_req.status in ("cancelled", "expired"):
         raise HTTPException(
             status_code=410,
@@ -317,35 +340,65 @@ async def get_page_image(
         )
 
     doc = sign_req.document
-    if not doc or not doc.file_path or not os.path.exists(doc.file_path):
-        raise HTTPException(status_code=404, detail="Document file not found")
+    storage = get_storage()
+
+    if not doc or not doc.file_path or not storage.exists(
+        doc.file_path
+    ):
+        raise HTTPException(
+            status_code=404, detail="Document file not found"
+        )
 
     if page_num < 1 or page_num > doc.page_count:
         raise HTTPException(
             status_code=400,
-            detail=f"page_num must be between 1 and {doc.page_count}",
+            detail=(
+                f"page_num must be between 1 and {doc.page_count}"
+            ),
         )
 
     mime = (doc.mime_type or "").lower()
+    pdf_data = storage.read(doc.file_path)
 
-    # ── Image files: serve directly ──
+    # Image files: serve directly
     if mime.startswith("image/"):
-        media_type = mime if mime in ("image/png", "image/jpeg", "image/webp") else "image/jpeg"
-        return FileResponse(doc.file_path, media_type=media_type)
+        media_type = (
+            mime
+            if mime in ("image/png", "image/jpeg", "image/webp")
+            else "image/jpeg"
+        )
+        return StreamingResponse(
+            io.BytesIO(pdf_data), media_type=media_type
+        )
 
-    # ── PDF: rasterise the requested page ──
+    # PDF: rasterise the requested page
     try:
-        from pdf2image import convert_from_path  # type: ignore
+        from pdf2image import convert_from_bytes
 
-        images = convert_from_path(
-            doc.file_path,
+        images = convert_from_bytes(
+            pdf_data,
             first_page=page_num,
             last_page=page_num,
             size=(1200, None),
         )
     except ImportError:
-        # pdf2image / poppler not installed — fall back to serving the raw file
-        return FileResponse(doc.file_path, media_type=mime or "application/pdf")
+        # Fallback to convert_from_path via temp file
+        with tempfile.NamedTemporaryFile(
+            suffix=".pdf", delete=False
+        ) as tmp:
+            tmp.write(pdf_data)
+            tmp_path = tmp.name
+        try:
+            from pdf2image import convert_from_path
+
+            images = convert_from_path(
+                tmp_path,
+                first_page=page_num,
+                last_page=page_num,
+                size=(1200, None),
+            )
+        finally:
+            os.unlink(tmp_path)
     except Exception as exc:
         raise HTTPException(
             status_code=503,
@@ -353,7 +406,10 @@ async def get_page_image(
         ) from exc
 
     if not images:
-        raise HTTPException(status_code=404, detail="Page could not be rendered")
+        raise HTTPException(
+            status_code=404,
+            detail="Page could not be rendered",
+        )
 
     buf = io.BytesIO()
     images[0].save(buf, format="PNG")
@@ -381,7 +437,10 @@ async def submit_signature(
         ip=ip,
         user_agent=user_agent,
     )
-    return {"status": sign_req.status, "signed_at": sign_req.signed_at}
+    return {
+        "status": sign_req.status,
+        "signed_at": sign_req.signed_at,
+    }
 
 
 @public_router.post("/decline/{token}")
@@ -402,4 +461,7 @@ async def decline_signature(
         ip=ip,
         user_agent=user_agent,
     )
-    return {"status": sign_req.status, "declined_at": sign_req.declined_at}
+    return {
+        "status": sign_req.status,
+        "declined_at": sign_req.declined_at,
+    }

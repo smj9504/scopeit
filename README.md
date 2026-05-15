@@ -2,25 +2,23 @@
 
 Simple estimating software for restoration contractors.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 - Node.js 20+
 - Python 3.11+
-- PostgreSQL 15+
+- PostgreSQL 15+ (local) or NeonDB (cloud)
 - Docker (optional)
 
-### Option 1: Docker (Recommended)
+### Option 1: Docker
 
 ```bash
-# Start all services
 docker-compose up -d
 
-# Access the app
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:8000
-# API Docs: http://localhost:8000/api/docs
+# Frontend: http://localhost:3001
+# Backend:  http://localhost:8001
+# API Docs: http://localhost:8001/api/docs
 ```
 
 ### Option 2: Manual Setup
@@ -29,51 +27,44 @@ docker-compose up -d
 
 ```bash
 cd backend
-
-# Create virtual environment
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
 pip install -r requirements.txt
 
-# Setup database
+# Local DB
 createdb scopeit_local
 alembic upgrade head
 
 # Run server
-uvicorn main:app --reload
+uvicorn main:app --reload --port 8001
 ```
 
 #### Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Run dev server
-npm run dev
+npm run dev  # http://localhost:3001
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 scopeit/
 ├── backend/
 │   ├── app/
-│   │   ├── core/           # Config, database, security
+│   │   ├── core/           # Config, database, security, storage
 │   │   ├── common/         # Shared utilities
-│   │   └── domains/        # Feature modules
+│   │   └── domains/        # Feature modules (DDD)
 │   │       ├── auth/
 │   │       ├── company/
 │   │       ├── customer/
 │   │       ├── estimate/
 │   │       ├── invoice/
-│   │       └── line_item/
+│   │       ├── line_item/
+│   │       └── tools/      # PDF editor, packing, roof analyzer
 │   ├── alembic/            # Database migrations
-│   └── main.py             # Application entry
+│   └── main.py
 ├── frontend/
 │   ├── src/
 │   │   ├── components/     # React components
@@ -81,108 +72,194 @@ scopeit/
 │   │   ├── services/       # API services
 │   │   ├── stores/         # Zustand stores
 │   │   ├── hooks/          # Custom hooks
-│   │   ├── types/          # TypeScript types
-│   │   └── styles/         # Theme & global styles
+│   │   └── types/          # TypeScript types
 │   └── index.html
+├── render.yaml             # Render deployment blueprint
 └── docker-compose.yml
 ```
 
-## 🎨 Design System
+## Tech Stack
 
-### Colors
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18 + TypeScript, Vite 5, Ant Design 5, Zustand, TanStack Query |
+| Backend | FastAPI, Python 3.11+, SQLAlchemy 2.0 (sync), Pydantic V2 |
+| Database | PostgreSQL 15 (NeonDB in production) |
+| File Storage | Local (dev) / Cloudflare R2 (production) |
+| Auth | JWT (HS256), Google OAuth |
+| PDF | WeasyPrint, PyPDF, ReportLab, pdf2image |
 
-| Name | Value | Usage |
-|------|-------|-------|
-| Primary | `#111827` | Buttons, headers, accents |
-| Background | `#f9fafb` | Page background |
-| Border | `#e5e7eb` | Card borders, dividers |
-| Text Primary | `#111827` | Headings, labels |
-| Text Secondary | `#6b7280` | Body text, descriptions |
+## Deployment
 
-### Typography
+### Architecture
 
-- **Headings**: Plus Jakarta Sans (700, 600)
-- **Body**: Inter (400, 500, 600)
+```
+Users → Vercel (Frontend) → Render (Backend API) → NeonDB (PostgreSQL)
+                                    ↕
+                            Cloudflare R2 (Files)
+```
 
-### Components
+| Service | Provider | URL |
+|---------|----------|-----|
+| Frontend | Vercel | `scopeit.work` |
+| Backend | Render | `api.scopeit.work` |
+| Database | NeonDB | `ep-xxx.neon.tech` |
+| Files | Cloudflare R2 | `scopeit-uploads` bucket |
 
-- Border radius: 6px (buttons), 12px (cards)
-- Minimal, clean aesthetic
-- No excessive shadows or gradients
+### 1. NeonDB Setup
 
-## ✨ Features
+1. Create project at [neon.tech](https://neon.tech)
+2. Copy connection string: `postgresql://user:pass@ep-xxx.neon.tech/scopeit?sslmode=require`
+3. To use the same DB locally, update `backend/.env.local`:
+   ```
+   DATABASE_URL=postgresql://user:pass@ep-xxx.neon.tech/scopeit?sslmode=require
+   ```
 
-### MVP Features
+#### Migrate Local Data to NeonDB
 
-- [x] User authentication (JWT)
-- [x] Company management
-- [x] Customer CRUD
-- [x] Line item library
-- [ ] Estimate creation with sections
-- [ ] Multi-select line items
-- [ ] Copy/paste between sections
-- [ ] Drag & drop reordering
-- [ ] Invoice creation
-- [ ] PDF export
-- [ ] Email sending
+```bash
+# Dump local DB
+pg_dump -U postgres -d scopeit_local -Fc -f scopeit_backup.dump
 
-### Phase 2
+# Restore to NeonDB
+pg_restore -h ep-xxx.neon.tech -U scopeit -d scopeit \
+  --no-owner --no-privileges scopeit_backup.dump
+```
 
-- [ ] Stripe payments
-- [ ] SendGrid email integration
-- [ ] AWS S3 file storage
-- [ ] Usage tracking & limits
+### 2. Cloudflare R2 Setup
 
-## 🔧 Configuration
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → R2
+2. Create bucket: `scopeit-uploads`
+3. Create API token: R2 → Manage R2 API Tokens → Create API Token
+4. Note: `Account ID`, `Access Key ID`, `Secret Access Key`
+5. Endpoint URL: `https://<ACCOUNT_ID>.r2.cloudflarestorage.com`
 
-### Environment Variables
+#### Migrate Local Files to R2
 
-#### Backend (.env.local)
+```bash
+# Install rclone
+# Configure rclone with R2 credentials, then:
+rclone copy ./backend/uploads r2:scopeit-uploads --progress
+```
+
+After migrating files, update `file_path` and `thumbnail_path` columns
+in the database to use storage keys (strip the `uploads/` prefix):
+
+```sql
+UPDATE pdf_documents
+SET file_path = REPLACE(file_path, 'uploads/', ''),
+    thumbnail_path = REPLACE(thumbnail_path, 'uploads/', '')
+WHERE file_path LIKE 'uploads/%';
+
+UPDATE company_documents
+SET file_path = REPLACE(file_path, 'uploads/', ''),
+    thumbnail_path = REPLACE(thumbnail_path, 'uploads/', '')
+WHERE file_path LIKE 'uploads/%';
+
+UPDATE sign_requests
+SET signed_file_path = REPLACE(signed_file_path, 'uploads/', '')
+WHERE signed_file_path LIKE 'uploads/%';
+```
+
+### 3. Render (Backend)
+
+1. Connect GitHub repo at [render.com](https://render.com)
+2. Use `render.yaml` blueprint or create Web Service manually:
+   - **Runtime**: Python
+   - **Root Directory**: `backend`
+   - **Build**: `pip install -r requirements.txt && alembic upgrade head`
+   - **Start**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+3. Set environment variables in Render dashboard:
+   - `DATABASE_URL` (NeonDB connection string)
+   - `R2_ENDPOINT_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+   - `ANTHROPIC_API_KEY`
+4. Add custom domain: `api.scopeit.work`
+
+### 4. Vercel (Frontend)
+
+1. Import repo at [vercel.com](https://vercel.com)
+2. Set **Root Directory**: `frontend`
+3. Set environment variable:
+   ```
+   VITE_API_URL=https://api.scopeit.work/api
+   ```
+4. Add custom domain: `scopeit.work`
+
+### 5. DNS Configuration
+
+```
+scopeit.work        → CNAME → cname.vercel-dns.com
+www.scopeit.work    → CNAME → cname.vercel-dns.com
+api.scopeit.work    → CNAME → scopeit-api.onrender.com
+```
+
+### 6. Post-Deployment Checklist
+
+- [ ] Update Google OAuth redirect URI to `https://api.scopeit.work/api/auth/google/callback`
+- [ ] Verify CORS allows `https://scopeit.work`
+- [ ] Test file upload/download with R2
+- [ ] Test PDF editor operations (merge, rotate, sign)
+- [ ] Test Google OAuth login flow
+
+## Environment Variables
+
+### Backend (.env.local)
 
 ```env
 ENV=local
 DEBUG=True
 DATABASE_URL=postgresql://scopeit:scopeit123@localhost:5432/scopeit_local
-SECRET_KEY=your-secret-key
-CORS_ORIGINS=http://localhost:3000
+SECRET_KEY=dev-secret-key
+CORS_ORIGINS=http://localhost:3001
 BETA_MODE=True
+
+# File storage (default: local)
+STORAGE_PROVIDER=local
+STORAGE_BASE_DIR=uploads
+
+# Optional: use R2 locally
+# STORAGE_PROVIDER=r2
+# R2_ENDPOINT_URL=https://ACCOUNT_ID.r2.cloudflarestorage.com
+# R2_ACCESS_KEY_ID=xxx
+# R2_SECRET_ACCESS_KEY=xxx
+# R2_BUCKET_NAME=scopeit-uploads
 ```
 
-#### Frontend (.env.local)
+### Frontend (.env.local)
 
 ```env
-VITE_API_URL=http://localhost:8000/api
+VITE_API_URL=http://localhost:8001/api
 ```
 
-## 📝 API Documentation
+## Design System
 
-When running locally, visit:
-- Swagger UI: http://localhost:8000/api/docs
-- ReDoc: http://localhost:8000/api/redoc
+| Property | Value |
+|----------|-------|
+| Primary | `#111827` |
+| Background | `#f9fafb` |
+| Border | `#e5e7eb` |
+| Headings | Plus Jakarta Sans |
+| Body | Inter |
+| Border Radius | 6px (buttons), 12px (cards) |
 
-## 🧪 Testing
+**UI Library**: Ant Design 5 with custom theme
+
+## API Documentation
+
+- Swagger: http://localhost:8001/api/docs
+- ReDoc: http://localhost:8001/api/redoc
+
+## Testing
 
 ```bash
-# Backend tests
-cd backend
-pytest
+# Backend
+cd backend && pytest
 
-# Frontend tests
-cd frontend
-npm test
+# Frontend
+cd frontend && npm test
 ```
 
-## 📦 Deployment
-
-See [docs/INFRASTRUCTURE.md](docs/INFRASTRUCTURE.md) for deployment guides:
-- Vercel (Frontend)
-- Render (Backend)
-- Neon (Database)
-
-## 📄 License
+## License
 
 Proprietary - All rights reserved.
-
----
-
-Built with ❤️ for restoration contractors.

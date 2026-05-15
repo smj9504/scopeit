@@ -97,8 +97,19 @@ class Settings(BaseSettings):
     # ===================
     # File Storage
     # ===================
-    STORAGE_PROVIDER: str = "local"  # local, s3
+    STORAGE_PROVIDER: str = "local"  # local, r2
     STORAGE_BASE_DIR: str = "uploads"
+
+    # Cloudflare R2 (S3-compatible)
+    R2_ENDPOINT_URL: Optional[str] = None      # https://<account_id>.r2.cloudflarestorage.com
+    R2_ACCESS_KEY_ID: Optional[str] = None
+    R2_SECRET_ACCESS_KEY: Optional[str] = None
+    R2_BUCKET_NAME: str = "scopeit-uploads"
+
+    # ===================
+    # Geoapify (Address Autocomplete)
+    # ===================
+    GEOAPIFY_API_KEY: Optional[str] = None
 
     # ===================
     # PDF Editor

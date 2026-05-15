@@ -1880,23 +1880,25 @@ class EstimateCalculator:
                 if "packing_paper" not in materials:
                     materials.append("packing_paper")
 
-            # Size-based labor adjustment
+            # Size + Weight labor adjustment
+            # Size and weight are correlated (large items tend to be heavy),
+            # so using max() instead of multiplication avoids double-counting
+            # the physical handling difficulty.
             item_size = getattr(item, 'size', None)
             SIZE_LABOR_MULT = {
                 "XS": 0.5, "S": 0.7, "M": 1.0,
-                "L": 1.3, "XL": 1.6, "XXL": 2.0,
+                "L": 1.2, "XL": 1.4, "XXL": 1.7,
             }
-            if item_size and item_size in SIZE_LABOR_MULT:
-                per_unit_h *= SIZE_LABOR_MULT[item_size]
-
-            # Weight-based labor adjustment (heavy = slower handling)
             item_weight = getattr(item, 'weight', None)
             WEIGHT_LABOR_MULT = {
                 "light": 0.8, "medium": 1.0,
-                "heavy": 1.3, "extra_heavy": 1.6,
+                "heavy": 1.2, "extra_heavy": 1.5,
             }
-            if item_weight and item_weight in WEIGHT_LABOR_MULT:
-                per_unit_h *= WEIGHT_LABOR_MULT[item_weight]
+            size_mult = SIZE_LABOR_MULT.get(item_size, 1.0) if item_size else 1.0
+            weight_mult = WEIGHT_LABOR_MULT.get(item_weight, 1.0) if item_weight else 1.0
+            # Use the dominant factor, not both — they measure the same difficulty
+            physical_mult = max(size_mult, weight_mult)
+            per_unit_h *= physical_mult
 
             # Extra blankets for XL/XXL items
             if item_size in ("XL", "XXL"):
@@ -2526,11 +2528,12 @@ class EstimateCalculator:
             item_furniture_ph = 0.0
             item_appliance_ph = 0.0
 
-            # AI returns pure wrapping/boxing time. Real pack-out includes
-            # moving to staging, documenting, photographing, workspace setup,
-            # and travel within property. Apply overhead multiplier to account
-            # for the full handling cycle.
-            LABOR_OVERHEAD_MULT = 1.25
+            # AI returns wrapping/boxing time. base_labor_hours already includes
+            # setup/teardown overhead per item. This small overhead accounts for
+            # workspace transitions and minor handling gaps only.
+            # Reduced from 1.25 → 1.10: base_h already covers per-item setup,
+            # and carry time is calculated separately in _calculate_relocation_hours.
+            LABOR_OVERHEAD_MULT = 1.10
 
             for item in items:
                 labor_h = getattr(item, 'estimated_labor_hours', None)
@@ -2561,36 +2564,30 @@ class EstimateCalculator:
             item_total_ph = (item_labor_ph + item_fragile_ph + item_specialty_ph
                              + item_furniture_ph + item_appliance_ph)
 
-            # Apply density multiplier to AI item labor.
-            # AI estimates packing time per item but doesn't account for room
-            # density (clutter slows movement, access, and stacking).
-            item_total_ph *= density_mult
+            # Density affects movement/access overhead, NOT core packing time.
+            # Wrapping a sofa takes the same time regardless of room clutter,
+            # but navigating a cluttered room adds ~10-30% access overhead.
+            # Apply density as partial modifier: only the EXCESS over normal
+            # contributes (e.g., heavy=1.6 → excess=0.6, 40% of excess applied).
+            if density_mult > 1.0:
+                density_overhead = 1.0 + (density_mult - 1.0) * 0.4
+            else:
+                density_overhead = density_mult  # light density = faster access
+            item_total_ph *= density_overhead
             if item_total_ph > 0:
-                # Scale each tier proportionally
-                item_labor_ph *= density_mult
-                item_fragile_ph *= density_mult
-                item_specialty_ph *= density_mult
-                item_furniture_ph *= density_mult
-                item_appliance_ph *= density_mult
+                item_labor_ph *= density_overhead
+                item_fragile_ph *= density_overhead
+                item_specialty_ph *= density_overhead
+                item_furniture_ph *= density_overhead
+                item_appliance_ph *= density_overhead
 
-            # Content-type modifiers (fragile-heavy rooms take longer, etc.)
+            # Content-type classification — used for tier distribution only.
+            # NOTE: content_modifier surcharge REMOVED. Per-item labor already
+            # accounts for category difficulty (fragile items have higher per_unit,
+            # furniture has disassembly time, etc.). Applying room-level modifiers
+            # on top of per-item labor double-counts the difficulty and inflates
+            # estimates by 25-40%.
             content_flags = self._classify_room_content(items)
-            content_modifier = 0.0
-            for flag, mod_value in self.CONTENT_TYPE_MODIFIERS.items():
-                if content_flags.get(flag):
-                    content_modifier += mod_value
-            if content_modifier > 0 and item_total_ph > 0:
-                bonus = item_total_ph * content_modifier
-                # Add bonus to the dominant tier
-                if content_flags.get("fragile_heavy"):
-                    item_fragile_ph += bonus
-                elif content_flags.get("furniture_heavy"):
-                    item_furniture_ph += bonus
-                elif content_flags.get("appliance_heavy"):
-                    item_appliance_ph += bonus
-                else:
-                    item_labor_ph += bonus
-                item_total_ph *= (1.0 + content_modifier)
 
             # Safety-net minimum: only kicks in when AI returns zero or
             # near-zero labor (e.g. no items detected, all items lack labor data).
