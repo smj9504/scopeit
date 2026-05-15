@@ -1,9 +1,14 @@
 """
 ScopeIt - Packing & Moving Estimator Tool API
 """
+import base64
 import logging
+import re
+import uuid
+from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import io
 
@@ -43,6 +48,31 @@ router = APIRouter()
 _gate = require_tool_access("packing")
 
 
+def _sanitize_filename(text: str) -> str:
+    """Remove characters unsafe for filenames, collapse whitespace."""
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _build_address_slug(property_address: str | None) -> str:
+    """Extract 'Street, City' from a property address for use in filenames.
+
+    Expects formats like '123 Main St, Dallas, TX 75201' or multi-line.
+    Returns e.g. '123 Main St, Dallas' or empty string.
+    """
+    if not property_address:
+        return ''
+    # Normalise newlines to commas
+    addr = property_address.replace('\n', ', ').replace('\r', '')
+    parts = [p.strip() for p in addr.split(',') if p.strip()]
+    if len(parts) >= 2:
+        # street + city (skip state/zip)
+        return _sanitize_filename(f"{parts[0]}, {parts[1]}")
+    if parts:
+        return _sanitize_filename(parts[0])
+    return ''
+
+
 @router.post("/quick-estimate", response_model=EstimateResponse)
 async def quick_estimate(
     request: QuickEstimateRequest,
@@ -51,7 +81,14 @@ async def quick_estimate(
 ):
     """Generate a quick estimate from room presets and configuration."""
     calculator = EstimateCalculator(db, current_user.company_id)
-    return calculator.calculate_estimate(request)
+    result = calculator.calculate_estimate(request)
+    # Validate output for issues (duplicate lines, count mismatches)
+    if result.section_details:
+        from app.domains.tools.modules.packing.service import validate_estimate_output
+        warnings = validate_estimate_output(result.section_details)
+        if warnings:
+            result.notes = (result.notes or []) + [f"⚠ {w}" for w in warnings]
+    return result
 
 
 @router.post("/content-estimate", response_model=EstimateResponse)
@@ -62,7 +99,14 @@ async def content_estimate(
 ):
     """Generate an estimate from a detailed per-room item inventory."""
     calculator = EstimateCalculator(db, current_user.company_id)
-    return calculator.calculate_estimate_from_content(request)
+    result = calculator.calculate_estimate_from_content(request)
+    # Validate output for issues (duplicate lines, count mismatches)
+    if result.section_details:
+        from app.domains.tools.modules.packing.service import validate_estimate_output
+        warnings = validate_estimate_output(result.section_details)
+        if warnings:
+            result.notes = (result.notes or []) + [f"⚠ {w}" for w in warnings]
+    return result
 
 
 @router.post("/analyze-room", response_model=RoomAnalysisResponse)
@@ -263,6 +307,7 @@ async def export_pdf(
     from app.domains.tools.service import ToolSessionService
     from app.domains.company.models import Company
     from uuid import UUID
+    import asyncio
 
     session_service = ToolSessionService(db)
     tool_session = session_service.get_session(
@@ -285,23 +330,39 @@ async def export_pdf(
     # include_packback, staging_type, crew_size, etc.
     estimate_data = {**settings, **(session_data.get("result") or session_data)}
 
-    pdf_bytes = generate_estimate_pdf(
+    property_address = client_info.get("property_address")
+
+    # Build notes string from result-level notes (e.g. workday scheduling)
+    result_notes = (session_data.get("result") or {}).get("notes", [])
+    notes_str = "\n".join(result_notes) if result_notes else None
+
+    # Run CPU-bound PDF generation in thread pool to avoid blocking event loop
+    pdf_bytes = await asyncio.to_thread(
+        generate_estimate_pdf,
         estimate_data=estimate_data,
         client_name=client_info.get("name"),
         client_phone=client_info.get("phone"),
         client_email=client_info.get("email"),
-        property_address=client_info.get("property_address"),
+        property_address=property_address,
         company_info=company_info,
         tax_rate=request.tax_rate,
+        notes=notes_str,
     )
+
+    # Filename: Pack Out Estimate - 123 Main St, Dallas - EST-2025-AB1234.pdf
+    addr_slug = _build_address_slug(property_address)
+    est_num = request.session_id[:8]
+    fname_parts = ["Pack Out Estimate"]
+    if addr_slug:
+        fname_parts.append(addr_slug)
+    fname_parts.append(est_num)
+    filename = _sanitize_filename(" - ".join(fname_parts)) + ".pdf"
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="estimate-{request.session_id[:8]}.pdf"'
-            )
+            "Content-Disposition": f'attachment; filename="{filename}"'
         },
     )
 
@@ -344,23 +405,38 @@ async def export_excel(
     # include_packback, staging_type, crew_size, etc.
     estimate_data = {**settings, **(session_data.get("result") or session_data)}
 
-    excel_bytes = generate_estimate_excel(
+    import asyncio
+    property_address = client_info.get("property_address")
+
+    # Build notes string from result-level notes (e.g. workday scheduling)
+    result_notes = (session_data.get("result") or {}).get("notes", [])
+    notes_str = "\n".join(result_notes) if result_notes else None
+
+    excel_bytes = await asyncio.to_thread(
+        generate_estimate_excel,
         estimate_data=estimate_data,
         client_name=client_info.get("name"),
         client_phone=client_info.get("phone"),
         client_email=client_info.get("email"),
-        property_address=client_info.get("property_address"),
+        property_address=property_address,
         company_info=company_info,
         tax_rate=request.tax_rate,
+        notes=notes_str,
     )
+
+    addr_slug = _build_address_slug(property_address)
+    est_num = request.session_id[:8]
+    fname_parts = ["Pack Out Estimate"]
+    if addr_slug:
+        fname_parts.append(addr_slug)
+    fname_parts.append(est_num)
+    filename = _sanitize_filename(" - ".join(fname_parts)) + ".xlsx"
 
     return StreamingResponse(
         io.BytesIO(excel_bytes),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="estimate-{request.session_id[:8]}.xlsx"'
-            )
+            "Content-Disposition": f'attachment; filename="{filename}"'
         },
     )
 
@@ -402,36 +478,82 @@ async def export_report(
     session_data = tool_session.data or {}
     client_info = session_data.get("client_info", {})
 
+    # Helper: load photos from storage keys for report embedding
+    def _load_photos_from_keys(photo_keys: list, room_name: str) -> list:
+        """Read photo_keys from storage and return base64 report photo dicts."""
+        from app.core.storage import get_storage
+        import base64 as b64mod
+        if not photo_keys:
+            return []
+        storage = get_storage()
+        photos = []
+        for idx, key in enumerate(photo_keys):
+            try:
+                data = storage.read(key)
+                ext = key.rsplit(".", 1)[-1].lower() if "." in key else "jpg"
+                mime = {"png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
+                encoded = b64mod.b64encode(data).decode("ascii")
+                photos.append({
+                    "image": f"data:{mime};base64,{encoded}",
+                    "caption": f"{room_name} - Photo {idx + 1}",
+                    "is_damage": False,
+                })
+            except Exception:
+                continue
+        return photos
+
     # Build rooms data from request or fall back to session
     rooms_data = []
+    session_photo_rooms = session_data.get("photo_rooms", [])
+
+    # Field notes: regenerate from current items (reflects user edits)
+    calc = EstimateCalculator(db=db, company_id=current_user.company_id)
+
     if request.rooms:
         rooms_data = [r.model_dump() for r in request.rooms]
+        # Inject storage-backed photos where request photos are empty
+        for i, rd in enumerate(rooms_data):
+            existing_photos = rd.get("photos") or []
+            has_real_photos = any(
+                isinstance(p, dict) and isinstance(p.get("image"), str) and len(p["image"]) > 200
+                for p in existing_photos
+            )
+            if not has_real_photos:
+                # Find matching session room for photo_keys
+                room_name = rd.get("room_name", "")
+                matching = next(
+                    (pr for pr in session_photo_rooms if pr.get("room_name") == room_name),
+                    None,
+                )
+                if matching:
+                    keys = matching.get("photo_keys", [])
+                    if keys:
+                        rd["photos"] = _load_photos_from_keys(keys, room_name)
     else:
         # Auto-build from session photo_rooms or room_summaries
-        photo_rooms = session_data.get("photo_rooms", [])
+        photo_rooms = session_photo_rooms
         result = session_data.get("result", {})
         room_summaries = result.get("room_summaries", [])
 
         if photo_rooms:
             for pr in photo_rooms:
-                # Convert stored base64 photos to report format
-                raw_photos = pr.get("photos", [])
-                report_photos = [
-                    {
-                        "image": p,
-                        "caption": "",
-                        "is_damage": False,
-                    }
-                    for p in raw_photos
-                    if isinstance(p, str) and len(p) > 100
-                ]
+                room_name = pr.get("room_name", "")
+                # Try photo_keys first, then fall back to inline base64
+                photo_keys = pr.get("photo_keys", [])
+                if photo_keys:
+                    report_photos = _load_photos_from_keys(photo_keys, room_name)
+                else:
+                    raw_photos = pr.get("photos", [])
+                    report_photos = [
+                        {"image": p, "caption": "", "is_damage": False}
+                        for p in raw_photos
+                        if isinstance(p, str) and len(p) > 100
+                    ]
                 rooms_data.append({
-                    "room_name": pr.get("room_name", ""),
+                    "room_name": room_name,
                     "items": pr.get("items", []),
                     "photos": report_photos,
-                    "field_notes": pr.get(
-                        "field_notes", [],
-                    ),
+                    "field_notes": pr.get("field_notes", []),
                     "labor_hours": None,
                     "labor_notes": "",
                 })
@@ -448,19 +570,47 @@ async def export_report(
                     "labor_notes": "",
                 })
 
+    # Regenerate field_notes from current items (reflects user edits)
+    if request.include_field_notes:
+        for rd in rooms_data:
+            items = rd.get("items") or []
+            if items:
+                # Build lightweight item objects for generate_field_notes
+                class _Item:
+                    pass
+                item_objs = []
+                for it in items:
+                    obj = _Item()
+                    if isinstance(it, dict):
+                        for k, v in it.items():
+                            setattr(obj, k, v)
+                    else:
+                        obj = it
+                    item_objs.append(obj)
+                rd["field_notes"] = calc.generate_field_notes(item_objs)
+            else:
+                rd["field_notes"] = []
+    else:
+        # User opted out of field notes
+        for rd in rooms_data:
+            rd["field_notes"] = []
+
     sections_cfg = (
         request.sections.model_dump()
         if request.sections else {}
     )
 
-    pdf_bytes = generate_report_pdf(
+    import asyncio
+    property_address = client_info.get("property_address")
+    pdf_bytes = await asyncio.to_thread(
+        generate_report_pdf,
         session_data=session_data,
         rooms_data=rooms_data,
         sections_config=sections_cfg,
         client_name=client_info.get("name"),
         client_phone=client_info.get("phone"),
         client_email=client_info.get("email"),
-        property_address=client_info.get("property_address"),
+        property_address=property_address,
         company_info=company_info,
         tax_rate=request.tax_rate,
         notes=request.notes,
@@ -469,14 +619,20 @@ async def export_report(
         max_image_width=request.max_image_width,
     )
 
+    # Filename: Pack Out Report - 123 Main St, Dallas - RPT-ab12cd34.pdf
+    addr_slug = _build_address_slug(property_address)
     sid = request.session_id[:8]
+    fname_parts = ["Pack Out Report"]
+    if addr_slug:
+        fname_parts.append(addr_slug)
+    fname_parts.append(sid)
+    filename = _sanitize_filename(" - ".join(fname_parts)) + ".pdf"
+
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
         headers={
-            "Content-Disposition": (
-                f'attachment; filename="report-{sid}.pdf"'
-            )
+            "Content-Disposition": f'attachment; filename="{filename}"'
         },
     )
 
@@ -520,3 +676,257 @@ async def get_prices(
         }
         for item in items
     ]
+
+
+# ── Company Profiles ───────────────────────────────────────────────────────
+
+PROFILES_TOOL_ID = "packing_company_profiles"
+
+
+class CompanyProfileData(BaseModel):
+    name: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    license: str | None = None
+
+
+class CompanyProfile(BaseModel):
+    id: str
+    label: str
+    data: CompanyProfileData
+
+
+class SaveProfileRequest(BaseModel):
+    label: str
+    data: CompanyProfileData
+
+
+def _get_profiles_session(db: Session, company_id):
+    """Get or create the single ToolSession that stores company profiles."""
+    from app.domains.tools.models import ToolSession
+    session = (
+        db.query(ToolSession)
+        .filter(
+            ToolSession.company_id == company_id,
+            ToolSession.tool_id == PROFILES_TOOL_ID,
+            ToolSession.is_active == True,
+        )
+        .first()
+    )
+    return session
+
+
+@router.get("/company-profiles")
+async def list_company_profiles(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_gate),
+):
+    """Return all saved company profiles for this company."""
+    session = _get_profiles_session(db, current_user.company_id)
+    if not session:
+        return []
+    return session.data.get("profiles", [])
+
+
+@router.post("/company-profiles", status_code=201)
+async def save_company_profile(
+    request: SaveProfileRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_gate),
+):
+    """Save or update a company profile. If a profile with the same label exists, update it."""
+    from app.domains.tools.models import ToolSession
+    from app.common.utils import generate_uuid
+
+    session = _get_profiles_session(db, current_user.company_id)
+
+    if not session:
+        session = ToolSession(
+            company_id=current_user.company_id,
+            created_by=current_user.id,
+            tool_id=PROFILES_TOOL_ID,
+            name="Company Profiles",
+            data={"profiles": []},
+        )
+        db.add(session)
+
+    profiles: list = session.data.get("profiles", [])
+
+    # Check for existing profile with same label
+    existing = next((p for p in profiles if p.get("label") == request.label), None)
+    if existing:
+        existing["data"] = request.data.model_dump()
+        profile = existing
+    else:
+        profile = {
+            "id": str(generate_uuid()),
+            "label": request.label,
+            "data": request.data.model_dump(),
+        }
+        profiles.append(profile)
+
+    # Force JSONB update detection
+    session.data = {**session.data, "profiles": profiles}
+    db.commit()
+    return profile
+
+
+@router.delete("/company-profiles/{profile_id}")
+async def delete_company_profile(
+    profile_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_gate),
+):
+    """Delete a saved company profile."""
+    session = _get_profiles_session(db, current_user.company_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    profiles: list = session.data.get("profiles", [])
+    new_profiles = [p for p in profiles if p.get("id") != profile_id]
+    if len(new_profiles) == len(profiles):
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    session.data = {**session.data, "profiles": new_profiles}
+    db.commit()
+    return {"deleted": True}
+
+
+# ── Address Autocomplete ──────────────────────────────────────────────────
+
+@router.get("/address-autocomplete")
+async def address_autocomplete(
+    q: str,
+    current_user: User = Depends(_gate),
+):
+    """Proxy address autocomplete via Geoapify (free tier: 3000 req/day).
+
+    Returns a list of address suggestions for the given query string.
+    Filters to US addresses only.
+    """
+    import httpx
+
+    api_key = settings.GEOAPIFY_API_KEY
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Address autocomplete not configured. Set GEOAPIFY_API_KEY.")
+
+    if len(q.strip()) < 3:
+        return []
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(
+            "https://api.geoapify.com/v1/geocode/autocomplete",
+            params={
+                "text": q,
+                "type": "street",
+                "filter": "countrycode:us",
+                "format": "json",
+                "limit": 5,
+                "apiKey": api_key,
+            },
+        )
+        if resp.status_code != 200:
+            return []
+
+        data = resp.json()
+        results = data.get("results", [])
+
+        return [
+            {
+                "address": r.get("formatted", ""),
+                "street": r.get("address_line1", ""),
+                "city": r.get("city", ""),
+                "state": r.get("state", ""),
+                "zip": r.get("postcode", ""),
+            }
+            for r in results
+            if r.get("formatted")
+        ]
+
+
+# ── Photo Storage ──────────────────────────────────────────────────────────
+
+class PhotoUploadRequest(BaseModel):
+    images: List[str]  # base64 encoded (raw or data URI)
+
+class PhotoUploadResponse(BaseModel):
+    photo_keys: List[str]  # storage keys for uploaded photos
+
+
+@router.post("/photos/upload", response_model=PhotoUploadResponse)
+async def upload_photos(
+    request: PhotoUploadRequest,
+    current_user: User = Depends(_gate),
+):
+    """Upload base64 photos to storage. Returns storage keys for later retrieval."""
+    from app.core.storage import get_storage
+
+    storage = get_storage()
+    photo_keys: list[str] = []
+
+    for img_b64 in request.images:
+        raw = img_b64
+        media_type = "image/jpeg"
+        if raw.startswith("data:"):
+            parts = raw.split(",", 1)
+            if len(parts) > 1:
+                media_type = parts[0].split(":")[1].split(";")[0]
+                raw = parts[1]
+
+        try:
+            img_bytes = base64.b64decode(raw)
+        except Exception:
+            continue
+
+        ext = {"image/png": ".png", "image/webp": ".webp"}.get(media_type, ".jpg")
+        file_id = str(uuid.uuid4())
+        key = f"{current_user.company_id}/packing/photos/{file_id}{ext}"
+        storage.write(key, img_bytes, content_type=media_type)
+        photo_keys.append(key)
+
+    return PhotoUploadResponse(photo_keys=photo_keys)
+
+
+@router.get("/photos/{file_id:path}")
+async def serve_photo(
+    file_id: str,
+    token: str | None = None,
+    current_user: User = Depends(_gate),
+):
+    """Serve a stored photo by its storage key."""
+    from app.core.storage import get_storage, LocalStorage
+    from fastapi.responses import FileResponse
+    import os
+
+    company_prefix = str(current_user.company_id)
+    if not file_id.startswith(company_prefix):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    ext = file_id.rsplit(".", 1)[-1].lower() if "." in file_id else "jpg"
+    media_type = {"png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
+
+    storage = get_storage()
+
+    # Fast path: local storage → serve file directly (zero-copy, sendfile)
+    if isinstance(storage, LocalStorage):
+        file_path = os.path.join(storage.base_dir, file_id)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail="Photo not found")
+        return FileResponse(
+            file_path,
+            media_type=media_type,
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
+
+    # R2/remote: read into memory
+    try:
+        data = storage.read(file_id)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type=media_type,
+        headers={"Cache-Control": "private, max-age=86400"},
+    )

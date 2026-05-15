@@ -65,14 +65,14 @@ def build_company_info(company, override=None) -> dict:
 # DEFAULT PRICES
 # ============================================
 DEFAULT_PRICES = {
-    'labor': 68.20, 'labor_fragile': 82.60, 'labor_specialty': 124.02, 'supervisor': 82.60,
+    'labor': 68.00, 'labor_fragile': 83.00, 'labor_specialty': 125.00, 'supervisor': 83.00,
     'box_small': 2.95, 'box_medium': 3.91, 'box_large': 5.28, 'box_xlarge': 6.40,
     'box_dish': 9.98, 'box_wardrobe': 18.48, 'box_mirror': 10.29, 'box_tv': 30.24,
     'blanket': 18.26, 'bubble_12': 23.98, 'bubble_antistatic': 42.00,
     'packing_paper': 18.00, 'shrink_wrap': 29.83,
     'poly_bags': 24.00, 'furniture_bags': 8.57, 'appliance_tape': 29.90,
     'packing_tape': 8.59, 'inventory_tags': 60.11, 'box_liners': 6.50,
-    'truck_26': 197.35, 'storage_sf': 2.20,
+    'truck_26': 197.00, 'storage_sf': 2.20,
     'waste_removal': 67.63,
 }
 
@@ -696,16 +696,15 @@ def generate_estimate_pdf(
         for section in sections
         for item in section['items']
     )
-    op_amount = (
-        estimate_data.get('op_amount')
-        if estimate_data.get('op_amount') is not None
-        else (subtotal * (op_rate / 100) if include_op else 0)
-    )
-    contingency_amount = (
-        estimate_data.get('contingency_amount')
-        if estimate_data.get('contingency_amount') is not None
-        else (subtotal * (contingency_rate / 100) if include_contingency else 0)
-    )
+    # Respect the include flags — if disabled, force 0 regardless of saved value
+    op_amount = 0
+    if include_op:
+        saved_op = estimate_data.get('op_amount')
+        op_amount = saved_op if saved_op is not None else subtotal * (op_rate / 100)
+    contingency_amount = 0
+    if include_contingency:
+        saved_cont = estimate_data.get('contingency_amount')
+        contingency_amount = saved_cont if saved_cont is not None else subtotal * (contingency_rate / 100)
     supplements = estimate_data.get('supplements', [])
     supplements_total = sum(
         s.get('amount', 0) for s in supplements if s.get('enabled', True)
@@ -773,16 +772,19 @@ def generate_estimate_pdf(
 
     styles = getSampleStyleSheet()
 
-    # Custom styles
+    # Pre-create all styles once (avoid re-instantiation per cell/row)
     style_normal = ParagraphStyle('Normal9', fontSize=9, leading=12)
     style_small = ParagraphStyle('Small', fontSize=9, leading=12, textColor=colors.Color(0.35, 0.35, 0.35))
     style_detail = ParagraphStyle('Detail', fontSize=9, leading=12, textColor=colors.Color(0.45, 0.45, 0.45))
     style_bold = ParagraphStyle('Bold9', fontSize=9, fontName='Helvetica-Bold', leading=12)
     style_section = ParagraphStyle('Section', fontSize=10, fontName='Helvetica-Bold',
-                                   textColor=colors.Color(0.2, 0.2, 0.2), spaceBefore=12, spaceAfter=6)  # 6pt space after section title
+                                   textColor=colors.Color(0.2, 0.2, 0.2), spaceBefore=12, spaceAfter=6)
     style_right = ParagraphStyle('Right9', fontSize=9, alignment=TA_RIGHT, leading=12)
+    style_right_bold = ParagraphStyle('RB9', fontSize=9, alignment=TA_RIGHT, leading=12, fontName='Helvetica-Bold')
+    style_center = ParagraphStyle('C9', fontSize=9, alignment=TA_CENTER, leading=12)
     style_title = ParagraphStyle('Title', fontSize=18, fontName='Helvetica-Bold')
     style_terms = ParagraphStyle('Terms', fontSize=9, leading=12, textColor=colors.Color(0.3, 0.3, 0.3))
+    style_total_line = ParagraphStyle('TotalLine', fontSize=14, fontName='Helvetica-Bold')
 
     story = []
 
@@ -838,8 +840,7 @@ Estimate date: {estimate_date}</font>""",
     story.append(Spacer(1, 0.2*inch))
 
     # ========== TOTAL ESTIMATE ==========
-    story.append(Paragraph(f"<b>Total Estimate: ${grand_total:,.2f}</b>",
-                          ParagraphStyle('TotalLine', fontSize=14, fontName='Helvetica-Bold')))
+    story.append(Paragraph(f"<b>Total Estimate: ${grand_total:,.2f}</b>", style_total_line))
     story.append(Spacer(1, 0.15*inch))
 
     # ========== PROJECT DESCRIPTION ==========
@@ -900,19 +901,19 @@ Estimate date: {estimate_date}</font>""",
         # Section header
         story.append(Paragraph(f"<b>{section['title']}</b>", style_section))
 
-        # Table header row
+        # Table header row — reuse pre-created styles
         table_data = [[
             Paragraph('<b>Item</b>', style_normal),
-            Paragraph('<b>Qty</b>', ParagraphStyle('H', fontSize=9, alignment=TA_RIGHT)),
-            Paragraph('<b>Unit</b>', ParagraphStyle('H', fontSize=9, alignment=TA_CENTER)),
-            Paragraph('<b>Price</b>', ParagraphStyle('H', fontSize=9, alignment=TA_RIGHT)),
-            Paragraph('<b>Total</b>', ParagraphStyle('H', fontSize=9, alignment=TA_RIGHT)),
+            Paragraph('<b>Qty</b>', style_right),
+            Paragraph('<b>Unit</b>', style_center),
+            Paragraph('<b>Price</b>', style_right),
+            Paragraph('<b>Total</b>', style_right),
         ]]
 
         for item in section['items']:
             total = item['qty'] * item['price']
 
-            # Build item cell with number, name, and detail (same font size)
+            # Build item cell with number, name, and detail
             if item.get('detail'):
                 item_cell = Paragraph(
                     f"<b>{item_number}. {item['name']}</b><br/><font color='#666666'>{item['detail']}</font>",
@@ -921,13 +922,13 @@ Estimate date: {estimate_date}</font>""",
             else:
                 item_cell = Paragraph(f"<b>{item_number}. {item['name']}</b>", style_normal)
 
+            qty_str = str(int(item['qty'])) if item['qty'] == int(item['qty']) else f"{item['qty']:.1f}"
             table_data.append([
                 item_cell,
-                Paragraph(str(int(item['qty'])) if item['qty'] == int(item['qty']) else f"{item['qty']:.1f}",
-                         ParagraphStyle('R', fontSize=9, alignment=TA_RIGHT)),
-                Paragraph(item['unit'], ParagraphStyle('C', fontSize=9, alignment=TA_CENTER)),
-                Paragraph(f"${item['price']:.2f}", ParagraphStyle('R', fontSize=9, alignment=TA_RIGHT)),
-                Paragraph(f"${total:.2f}", ParagraphStyle('R', fontSize=9, alignment=TA_RIGHT)),
+                Paragraph(qty_str, style_right),
+                Paragraph(item['unit'], style_center),
+                Paragraph(f"${item['price']:.2f}", style_right),
+                Paragraph(f"${total:.2f}", style_right),
             ])
             item_number += 1
 
@@ -935,8 +936,8 @@ Estimate date: {estimate_date}</font>""",
         section_subtotal = sum(item['qty'] * item['price'] for item in section['items'])
         table_data.append([
             '', '', '',
-            Paragraph('<b>Subtotal:</b>', ParagraphStyle('R', fontSize=9, alignment=TA_RIGHT)),
-            Paragraph(f"<b>${section_subtotal:,.2f}</b>", ParagraphStyle('R', fontSize=9, alignment=TA_RIGHT)),
+            Paragraph('<b>Subtotal:</b>', style_right_bold),
+            Paragraph(f"<b>${section_subtotal:,.2f}</b>", style_right_bold),
         ])
 
         # Create table - full width with proper padding
@@ -978,8 +979,12 @@ Estimate date: {estimate_date}</font>""",
         ])
     for supp in supplements:
         if supp.get('enabled', True) and supp.get('amount', 0) > 0:
+            supp_label = supp['name']
+            supp_reason = supp.get('reason', '').strip()
+            if supp_reason:
+                supp_label += f"<br/><font size=7 color='#666666'>{supp_reason}</font>"
             totals_data.append([
-                Paragraph(supp['name'], style_right),
+                Paragraph(supp_label, style_right),
                 Paragraph(f"${supp['amount']:,.2f}", style_right),
             ])
     if tax_rate > 0:
@@ -1007,6 +1012,22 @@ Estimate date: {estimate_date}</font>""",
         ('RIGHTPADDING', (0, 0), (-1, -1), 8),
     ]))
     story.append(totals_table)
+
+    # ========== SCHEDULING NOTES ==========
+    if notes:
+        story.append(Spacer(1, 0.25*inch))
+        style_note_hdr = ParagraphStyle(
+            'NoteHeader', fontSize=10, leading=13,
+            textColor=colors.Color(0.15, 0.15, 0.15),
+            spaceAfter=4, fontName='Helvetica-Bold')
+        style_note_body = ParagraphStyle(
+            'NoteBody', fontSize=9, leading=12,
+            textColor=colors.Color(0.25, 0.25, 0.25),
+            spaceAfter=4, fontName='Helvetica')
+        story.append(Paragraph("Notes", style_note_hdr))
+        for line in notes.split("\n"):
+            if line.strip():
+                story.append(Paragraph(line.strip(), style_note_body))
 
     # ========== TERMS & CONDITIONS ==========
     story.append(Spacer(1, 0.3*inch))
@@ -1193,16 +1214,15 @@ def generate_estimate_excel(
         for section in sections
         for item in section['items']
     )
-    op_amount = (
-        estimate_data.get('op_amount')
-        if estimate_data.get('op_amount') is not None
-        else (subtotal * (op_rate / 100) if include_op else 0)
-    )
-    contingency_amount = (
-        estimate_data.get('contingency_amount')
-        if estimate_data.get('contingency_amount') is not None
-        else (subtotal * (contingency_rate / 100) if include_contingency else 0)
-    )
+    # Respect the include flags — if disabled, force 0 regardless of saved value
+    op_amount = 0
+    if include_op:
+        saved_op = estimate_data.get('op_amount')
+        op_amount = saved_op if saved_op is not None else subtotal * (op_rate / 100)
+    contingency_amount = 0
+    if include_contingency:
+        saved_cont = estimate_data.get('contingency_amount')
+        contingency_amount = saved_cont if saved_cont is not None else subtotal * (contingency_rate / 100)
     supplements = estimate_data.get('supplements', [])
     supplements_total = sum(
         s.get('amount', 0) for s in supplements if s.get('enabled', True)
@@ -1288,8 +1308,12 @@ def generate_estimate_excel(
 
     for supp in supplements:
         if supp.get('enabled', True) and supp.get('amount', 0) > 0:
+            supp_label = supp['name']
+            supp_reason = supp.get('reason', '').strip()
+            if supp_reason:
+                supp_label += f" ({supp_reason})"
             ws.cell(
-                row=row, column=4, value=supp['name'],
+                row=row, column=4, value=supp_label,
             ).font = normal_font
             ws.cell(row=row, column=4).alignment = Alignment(
                 horizontal='right',
@@ -1380,6 +1404,21 @@ def generate_estimate_excel(
         ws.merge_cells(start_row=row, start_column=1,
                        end_row=row, end_column=5)
         row += 1
+
+    # ── Notes (e.g. workday scheduling) ──
+    if notes:
+        row += 1
+        cell = ws.cell(row=row, column=1, value="Notes")
+        cell.font = Font(bold=True, size=10)
+        row += 1
+        for line in notes.split("\n"):
+            if line.strip():
+                cell = ws.cell(row=row, column=1, value=line.strip())
+                cell.font = Font(size=9, color="444444")
+                cell.alignment = Alignment(wrap_text=True)
+                ws.merge_cells(start_row=row, start_column=1,
+                               end_row=row, end_column=5)
+                row += 1
 
     buffer = io.BytesIO()
     wb.save(buffer)
@@ -1615,7 +1654,7 @@ def generate_inventory_excel(
         )
         row += 1
 
-    # --- Field Notes ---
+    # --- Field Notes (regenerated from current items at report time) ---
     if all_field_notes:
         row += 1
         ws.merge_cells(
@@ -2046,7 +2085,7 @@ def generate_report_pdf(
                 )
                 story.append(Spacer(1, 8))
 
-            # -- Field Notes --
+            # Field notes (regenerated from current items at report time)
             field_notes = room.get("field_notes") or []
             if field_notes:
                 notes_text = " | ".join(field_notes)
