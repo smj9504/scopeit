@@ -1114,38 +1114,37 @@ class EstimateCalculator:
             total_room_base += room_price
             total_items += items
 
-        # Crew efficiency with diminishing returns (industry standard: each extra person adds ~0.7-0.8x marginal efficiency)
-        # Results: 2→1.0x, 3→1.42x, 4→1.77x, 5→2.05x, 6→2.26x
-        def crew_efficiency(n: int) -> float:
-            total = 1.0
-            for i in range(1, n - 1):
-                total += max(0.2, 1.0 - 0.15 * i)
-            return total
-
         # Region labor premium (applied to labor only, not materials/storage)
         region_str = request.region.value if hasattr(request.region, 'value') else str(getattr(request, 'region', 'midwest'))
         region_mult = REGION_MULTIPLIERS.get(region_str, 1.0)
 
-        crew_multiplier = crew_efficiency(request.crew_size)
-        labor_base = total_room_base * crew_multiplier * region_mult
+        # Room base rates represent the TOTAL COST to pack each room.
+        # Labor cost = room_base × region_mult.
+        # Person-hours = cost / rate. Elapsed = person-hours / crew.
+        labor_base = total_room_base * region_mult
 
         # Calculate hours
         labor_rate = self.get_price("2825")  # Content manipulation
-        total_hours = labor_base / labor_rate if labor_rate > 0 else 0
+        person_hours_total = labor_base / labor_rate if labor_rate > 0 else 0
+        # total_hours = ELAPSED time (what the client actually experiences on-site)
+        total_hours = person_hours_total / request.crew_size if request.crew_size > 0 else person_hours_total
 
-        # Pack-out/pack-back split
-        pack_out_hours = round(total_hours * 0.62)
-        pack_back_hours = round(total_hours * 0.38) if request.include_packback else 0
+        # Pack-out/pack-back split (elapsed hours)
+        pack_out_hours = round(total_hours * 0.62, 1)
+        pack_back_hours = round(total_hours * 0.38, 1) if request.include_packback else 0
 
-        # Supervision hours
-        supervisor_hours = round(total_hours * 0.1)
+        # Supervision hours (1 person, not full crew)
+        supervisor_hours = max(1, round(total_hours * 0.1))
         supervisor_rate = self.get_price("2911")
+
+        crew = request.crew_size
 
         # Calculate materials: hybrid approach
         # Itemised breakdown used only for category ratios;
         # total is anchored to pack-out labor × material_rate%.
         materials = self.calculate_materials(request.rooms)
-        pack_out_labor_cost = pack_out_hours * labor_rate
+        # Pack-out labor cost = elapsed hours × crew × rate (all crew members working)
+        pack_out_labor_cost = pack_out_hours * crew * labor_rate
         material_rate_pct = getattr(request, 'material_rate', 25)
         material_cost, mat_section_lines, mat_details_legacy = (
             self.build_hybrid_materials(
@@ -1203,8 +1202,9 @@ class EstimateCalculator:
             special_item_lines.append({"name": custom.name, "unit": "EA", "price": custom.price})
 
         # Build sections (Pack-Out Labor total is recalculated after section_details)
+        # Note: hours are ELAPSED, cost = elapsed × crew × rate
         sections = {
-            "Pack-Out Labor": pack_out_hours * labor_rate,
+            "Pack-Out Labor": pack_out_hours * crew * labor_rate,
             "Materials": material_cost,
         }
 
@@ -1220,7 +1220,7 @@ class EstimateCalculator:
                 sections["On-Site Pack-Back Move"] = on_site_moving_fee
             else:
                 sections["Transport Back"] = (truck_rate + loading_cost) * quick_truck_trips
-            sections["Pack-Back Labor"] = pack_back_hours * labor_rate
+            sections["Pack-Back Labor"] = pack_back_hours * crew * labor_rate
 
         if special_item_cost > 0:
             sections["Special Items"] = round(special_item_cost, 2)
@@ -1248,32 +1248,42 @@ class EstimateCalculator:
         section_details: Dict[str, Any] = {}
         crew = request.crew_size
 
-        # Split Pack-Out Labor into sub-lines matching PDF format
-        _po_std_hours = max(4, round(pack_out_hours * 0.6))
-        _po_fragile_hours = max(2, round(pack_out_hours * 0.15))
-        _po_specialty_hours = max(1, round(pack_out_hours * 0.08))
-        _po_furniture_hours = max(2, round(pack_out_hours * 0.1))
-        _po_appliance_hours = max(2, round(pack_out_hours * 0.08))
-        _po_inventory_hours = max(2, round(total_hours * 0.06))
-        _po_crew_hours = _po_std_hours + _po_furniture_hours + _po_appliance_hours + _po_inventory_hours
-        _po_specialized_hours = _po_fragile_hours + _po_specialty_hours
+        # Split Pack-Out Labor into sub-lines matching PDF format.
+        # Hours shown are PERSON-HOURS (elapsed × crew) since rate = per person-hour.
+        _po_elapsed_std = max(1, round(pack_out_hours * 0.6, 1))
+        _po_elapsed_fragile = round(pack_out_hours * 0.15, 1)
+        _po_elapsed_specialty = round(pack_out_hours * 0.08, 1)
+        _po_elapsed_furniture = round(pack_out_hours * 0.1, 1)
+        _po_elapsed_appliance = round(pack_out_hours * 0.08, 1)
+        _po_inventory_hours = max(1, round(total_hours * 0.06))  # 1 person, not crew
 
-        section_details["Pack-Out Labor"] = {"lines": [
-            {"name": "Pack-Out Crew Labor", "qty": _po_crew_hours, "unit": "HR",
+        # Person-hours for crew tasks
+        _po_crew_ph = round((_po_elapsed_std + _po_elapsed_furniture + _po_elapsed_appliance) * crew)
+        _po_fragile_ph = round(_po_elapsed_fragile * crew) if _po_elapsed_fragile > 0 else 0
+        _po_specialty_ph = round(_po_elapsed_specialty * crew) if _po_elapsed_specialty > 0 else 0
+        _specialty_rate = self.get_price("2912") or 125.00
+
+        po_detail_lines = [
+            {"name": "Pack-Out Crew Labor", "qty": _po_crew_ph, "unit": "HR",
              "rate": round(labor_rate, 2),
-             "detail": f"{crew}-person crew, professional packing of all contents including wrapping, boxing, labeling, and loading",
-             "amount": round(_po_crew_hours * labor_rate, 2)},
+             "detail": f"{_po_elapsed_std + _po_elapsed_furniture + _po_elapsed_appliance:.1f} elapsed hr · {crew}-person crew  (wrap, box, label, load)",
+             "amount": round(_po_crew_ph * labor_rate, 2)},
             {"name": "Supervisor/Foreman", "qty": supervisor_hours, "unit": "HR",
              "rate": round(supervisor_rate, 2),
              "detail": f"On-site supervision across {len(request.rooms)} rooms, inventory documentation, quality control",
              "amount": round(supervisor_hours * supervisor_rate, 2)},
-            {"name": "Specialized Handling", "qty": _po_specialized_hours, "unit": "HR",
-             "rate": round(self.get_price("2912") or 124.02, 2),
-             "detail": "Electronics, fragile items, artwork — includes extra care packaging and custom crating as needed",
-             "amount": round(_po_specialized_hours * (self.get_price("2912") or 124.02), 2)},
-        ]}
+        ]
+        if _po_fragile_ph + _po_specialty_ph > 0:
+            _specialized_ph = _po_fragile_ph + _po_specialty_ph
+            po_detail_lines.append(
+                {"name": "Specialized Handling", "qty": _specialized_ph, "unit": "HR",
+                 "rate": round(_specialty_rate, 2),
+                 "detail": "Electronics, fragile items, artwork — extra care packaging and custom crating",
+                 "amount": round(_specialized_ph * _specialty_rate, 2)},
+            )
+        section_details["Pack-Out Labor"] = {"lines": po_detail_lines}
         # Recalculate Pack-Out Labor section total to match sub-lines
-        sections["Pack-Out Labor"] = sum(l["amount"] for l in section_details["Pack-Out Labor"]["lines"])
+        sections["Pack-Out Labor"] = sum(l["amount"] for l in po_detail_lines)
 
         def _rh(x):
             return round(x * 2) / 2
@@ -1311,30 +1321,23 @@ class EstimateCalculator:
                     _setup_fee, storage_cost,
                 )
         if request.include_packback:
-            # Split Pack-Back into sub-lines matching PDF format
-            _pb_crew_base = max(8, round(pack_back_hours * 0.65))
-            _pb_reassembly = max(2, round(pack_back_hours * 0.12))
-            _pb_appliance = max(1, round(pack_back_hours * 0.06))
-            _pb_waste = max(1, round(pack_back_hours * 0.06))
-            _pb_supervisor = max(2, round(pack_back_hours * 0.12))
-            _pb_total_crew = _pb_crew_base + _pb_reassembly + _pb_appliance + _pb_waste
-            _spec_ratio = _po_specialized_hours / max(1, _po_crew_hours + _po_specialized_hours)
-            _pb_specialized = max(1, round(_pb_total_crew * _spec_ratio))
-            _specialty_rate = self.get_price("2912") or 124.02
+            # Split Pack-Back into sub-lines (person-hours = elapsed × crew)
+            _pb_elapsed_base = max(1, round(pack_back_hours * 0.70, 1))
+            _pb_elapsed_reassembly = round(pack_back_hours * 0.15, 1)
+            _pb_elapsed_appliance = round(pack_back_hours * 0.08, 1)
+            _pb_supervisor = max(1, round(pack_back_hours * 0.12))  # 1 person
+
+            _pb_crew_ph = round((_pb_elapsed_base + _pb_elapsed_reassembly + _pb_elapsed_appliance) * crew)
 
             pb_lines = [
-                {"name": "Pack-Back Crew Labor", "qty": _pb_total_crew, "unit": "HR",
+                {"name": "Pack-Back Crew Labor", "qty": _pb_crew_ph, "unit": "HR",
                  "rate": round(labor_rate, 2),
-                 "detail": f"{crew}-person crew, unloading, placement, furniture reassembly, and unpacking",
-                 "amount": round(_pb_total_crew * labor_rate, 2)},
+                 "detail": f"{_pb_elapsed_base + _pb_elapsed_reassembly + _pb_elapsed_appliance:.1f} elapsed hr · {crew}-person crew  (unpack, place, reassemble)",
+                 "amount": round(_pb_crew_ph * labor_rate, 2)},
                 {"name": "Supervisor/Foreman", "qty": _pb_supervisor, "unit": "HR",
                  "rate": round(supervisor_rate, 2),
                  "detail": "Pack-back oversight, quality control, client walkthrough",
                  "amount": round(_pb_supervisor * supervisor_rate, 2)},
-                {"name": "Specialized Handling", "qty": _pb_specialized, "unit": "HR",
-                 "rate": round(_specialty_rate, 2),
-                 "detail": "Electronics, fragile items, artwork — careful unpacking and placement",
-                 "amount": round(_pb_specialized * _specialty_rate, 2)},
             ]
             section_details["Pack-Back Labor"] = {"lines": pb_lines}
             # Recalculate Pack-Back Labor section total to match sub-lines
