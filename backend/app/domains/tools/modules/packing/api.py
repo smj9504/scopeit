@@ -506,12 +506,74 @@ async def export_report(
     rooms_data = []
     session_photo_rooms = session_data.get("photo_rooms", [])
 
-    # Field notes: regenerate from current items (reflects user edits)
+    # Field notes & per-room labor: regenerate from current items
     calc = EstimateCalculator(db=db, company_id=current_user.company_id)
+    crew_size = (session_data.get("result") or session_data).get("crew_size", 4)
+
+    def _compute_room_labor(items: list, room_name: str) -> tuple:
+        """Compute per-room labor hours and build labor notes from items.
+
+        Returns (labor_hours, labor_notes_str).
+        """
+        if not items:
+            return 0.0, ""
+
+        # Build lightweight item objects for the calculator
+        class _Obj:
+            pass
+        item_objs = []
+        for it in items:
+            obj = _Obj()
+            if isinstance(it, dict):
+                for k, v in it.items():
+                    setattr(obj, k, v)
+            else:
+                obj = it
+            item_objs.append(obj)
+
+        # Enrich items with packing details (labor, materials, etc.)
+        calc.enrich_items_for_estimate(item_objs)
+
+        # Sum per-item labor hours
+        total_labor = 0.0
+        fragile_count = 0
+        high_value_count = 0
+        heavy_count = 0
+        disassembly_count = 0
+        for obj in item_objs:
+            labor = getattr(obj, 'estimated_labor_hours', None) or 0
+            total_labor += labor
+            qty = getattr(obj, 'quantity', 1) or 1
+            if getattr(obj, 'is_fragile', False):
+                fragile_count += qty
+            if getattr(obj, 'is_high_value', False):
+                high_value_count += qty
+            if getattr(obj, 'weight', '') in ('heavy', 'extra_heavy'):
+                heavy_count += qty
+            if getattr(obj, 'needs_disassembly', False):
+                disassembly_count += qty
+
+        # Convert to elapsed hours (divide by crew)
+        elapsed = round(total_labor / max(1, crew_size), 1)
+
+        # Build descriptive notes
+        total_items = sum(getattr(o, 'quantity', 1) or 1 for o in item_objs)
+        parts = [f"{total_items} items"]
+        if fragile_count:
+            parts.append(f"{fragile_count} fragile")
+        if high_value_count:
+            parts.append(f"{high_value_count} high-value")
+        if heavy_count:
+            parts.append(f"{heavy_count} heavy (2-person lift)")
+        if disassembly_count:
+            parts.append(f"{disassembly_count} require disassembly")
+        notes = ", ".join(parts)
+
+        return elapsed, notes
 
     if request.rooms:
         rooms_data = [r.model_dump() for r in request.rooms]
-        # Inject storage-backed photos where request photos are empty
+        # Inject storage-backed photos and compute per-room labor
         for i, rd in enumerate(rooms_data):
             existing_photos = rd.get("photos") or []
             has_real_photos = any(
@@ -529,6 +591,13 @@ async def export_report(
                     keys = matching.get("photo_keys", [])
                     if keys:
                         rd["photos"] = _load_photos_from_keys(keys, room_name)
+            # Compute per-room labor if not already provided
+            if rd.get("labor_hours") is None:
+                room_labor, room_labor_notes = _compute_room_labor(
+                    rd.get("items", []), rd.get("room_name", ""),
+                )
+                rd["labor_hours"] = room_labor
+                rd["labor_notes"] = room_labor_notes
     else:
         # Auto-build from session photo_rooms or room_summaries
         photo_rooms = session_photo_rooms
@@ -549,25 +618,29 @@ async def export_report(
                         for p in raw_photos
                         if isinstance(p, str) and len(p) > 100
                     ]
+                room_items = pr.get("items", [])
+                room_labor, room_labor_notes = _compute_room_labor(room_items, room_name)
                 rooms_data.append({
                     "room_name": room_name,
-                    "items": pr.get("items", []),
+                    "items": room_items,
                     "photos": report_photos,
                     "field_notes": pr.get("field_notes", []),
-                    "labor_hours": None,
-                    "labor_notes": "",
+                    "labor_hours": room_labor,
+                    "labor_notes": room_labor_notes,
                 })
         elif room_summaries:
             for rs in room_summaries:
+                rs_items = rs.get("items", [])
+                rs_labor, rs_labor_notes = _compute_room_labor(rs_items, rs.get("room_name", ""))
                 rooms_data.append({
                     "room_name": rs.get("room_name", ""),
-                    "items": [],
+                    "items": rs_items,
                     "photos": [],
                     "field_notes": rs.get(
                         "packing_notes", [],
                     ),
-                    "labor_hours": None,
-                    "labor_notes": "",
+                    "labor_hours": rs_labor,
+                    "labor_notes": rs_labor_notes,
                 })
 
     # Regenerate field_notes from current items (reflects user edits)

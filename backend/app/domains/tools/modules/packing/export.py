@@ -1728,8 +1728,14 @@ def _compress_image_bytes(
     quality: int = 60,
 ) -> bytes:
     """Compress an image to JPEG with size limits for small PDF output."""
-    from PIL import Image
+    from PIL import Image, ImageOps
     img = Image.open(io.BytesIO(img_data))
+
+    # Fix EXIF orientation (iPhone photos are often rotated in EXIF metadata)
+    try:
+        img = ImageOps.exif_transpose(img)
+    except Exception:
+        pass  # If EXIF data is missing or corrupt, continue with original
 
     # Convert RGBA/P to RGB for JPEG
     if img.mode in ("RGBA", "P"):
@@ -1935,7 +1941,15 @@ def generate_report_pdf(
         total_hours = estimate_data.get("total_hours", 0)
         crew_size = estimate_data.get("crew_size", 4)
 
+        # Cross-reference: link to the estimate that generated this report
+        estimate_id = estimate_data.get("id") or session_data.get("id") or ""
         story.append(Paragraph("Estimate Summary", style_section))
+        if estimate_id:
+            story.append(Paragraph(
+                f'<font size="8" color="#666666">Ref: Estimate #{estimate_id}  |  Report #{report_number}</font>',
+                style_small,
+            ))
+            story.append(Spacer(1, 4))
 
         summary_data = [
             ["Rooms", "Hours", "Crew", "Subtotal", "Grand Total"],
@@ -2028,10 +2042,14 @@ def generate_report_pdf(
                 story.append(Spacer(1, 8))
 
             # -- Labor Log --
-            if show_labor:
-                labor_hours = room.get("labor_hours") or 0
-                labor_notes = room.get("labor_notes") or ""
-                if labor_hours > 0 or labor_notes:
+            # Always show labor info when items exist (even if labor_log toggle is off),
+            # as a compact summary line under the inventory. Full labor table only
+            # when labor_log is explicitly enabled.
+            labor_hours = room.get("labor_hours") or 0
+            labor_notes = room.get("labor_notes") or ""
+            if items and (labor_hours > 0 or labor_notes):
+                if show_labor:
+                    # Full labor table
                     labor_data = [
                         ["Labor Hours", "Notes"],
                         [
@@ -2059,6 +2077,13 @@ def generate_report_pdf(
                         labor_table,
                     ]))
                     story.append(Spacer(1, 8))
+                else:
+                    # Compact summary line (always shown when items exist)
+                    summary_text = f"Labor: {labor_hours:.1f} hrs"
+                    if labor_notes:
+                        summary_text += f" — {labor_notes}"
+                    story.append(Paragraph(summary_text, style_small))
+                    story.append(Spacer(1, 4))
 
             # -- Room Photos & Damage Photos --
             photos = room.get("photos") or []
@@ -2093,6 +2118,99 @@ def generate_report_pdf(
                     f"<i>Notes: {notes_text}</i>", style_small,
                 ))
                 story.append(Spacer(1, 6))
+
+    # ========== INVENTORY SUMMARY ==========
+    if rooms_data and show_inventory:
+        # Aggregate stats across all rooms
+        total_line_items = 0
+        total_qty = 0
+        total_labor = 0.0
+        cat_counts: Dict[str, int] = {}
+        fragile_total = 0
+        hv_total = 0
+        heavy_total = 0
+        disassembly_total = 0
+
+        for room in rooms_data:
+            items = room.get("items") or []
+            total_line_items += len(items)
+            total_labor += room.get("labor_hours") or 0
+            for item in items:
+                qty = item.get("quantity", 1) or 1
+                total_qty += qty
+                cat = item.get("category", "Other")
+                cat_counts[cat] = cat_counts.get(cat, 0) + qty
+                if item.get("is_fragile"):
+                    fragile_total += qty
+                if item.get("is_high_value"):
+                    hv_total += qty
+                if item.get("weight") in ("heavy", "extra_heavy"):
+                    heavy_total += qty
+                if item.get("needs_disassembly"):
+                    disassembly_total += qty
+
+        story.append(Spacer(1, 0.1 * inch))
+        story.append(HRFlowable(
+            width="100%", thickness=0.5,
+            color=colors.Color(0.8, 0.8, 0.8),
+        ))
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Inventory Summary", style_section))
+
+        # Top-level stats
+        summary_rows = [
+            ["Total Rooms", "Line Items", "Total Pieces", "Est. Labor", "Fragile", "High-Value", "Heavy"],
+            [
+                str(len(rooms_data)),
+                str(total_line_items),
+                str(total_qty),
+                f"{total_labor:.1f} hrs",
+                str(fragile_total),
+                str(hv_total),
+                str(heavy_total),
+            ],
+        ]
+        sum_table = Table(
+            summary_rows,
+            colWidths=[1.0 * inch] * 7,
+            hAlign="LEFT",
+        )
+        sum_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.93, 0.93, 0.93)),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.Color(0.85, 0.85, 0.85)),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        story.append(sum_table)
+
+        # Category breakdown (top 8 categories)
+        if cat_counts:
+            sorted_cats = sorted(cat_counts.items(), key=lambda x: -x[1])[:8]
+            cat_header = [c[0] for c in sorted_cats]
+            cat_values = [str(c[1]) for c in sorted_cats]
+            cat_table = Table(
+                [cat_header, cat_values],
+                colWidths=[max(0.8, 7.0 / len(sorted_cats)) * inch] * len(sorted_cats),
+                hAlign="LEFT",
+            )
+            cat_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.95, 0.95, 0.95)),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("GRID", (0, 0), (-1, -1), 0.3, colors.Color(0.88, 0.88, 0.88)),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]))
+            story.append(Spacer(1, 6))
+            story.append(Paragraph("<b>Category Breakdown</b>", style_bold))
+            story.append(Spacer(1, 3))
+            story.append(cat_table)
+
+        story.append(Spacer(1, 0.15 * inch))
 
     # ========== ADDITIONAL NOTES ==========
     if notes:
