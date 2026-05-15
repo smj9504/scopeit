@@ -109,6 +109,19 @@ const EstimateDetailPage: React.FC = () => {
     },
   });
 
+  // Update dates mutation
+  const updateDatesMutation = useMutation({
+    mutationFn: (dates: { estimate_date?: string; valid_until?: string }) =>
+      estimateService.updateDates(id!, dates),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['estimate', id] });
+      message.success('Date updated');
+    },
+    onError: () => {
+      message.error('Failed to update date');
+    },
+  });
+
   // Add payment mutation
   const addPaymentMutation = useMutation({
     mutationFn: (data: { amount: number; paymentMethod?: string; paymentDate?: string; notes?: string }) =>
@@ -552,14 +565,33 @@ const EstimateDetailPage: React.FC = () => {
                 )}
               </Descriptions.Item>
               <Descriptions.Item label="Estimate Date">
-                {estimate.estimateDate
-                  ? dayjs(estimate.estimateDate).format('MMMM D, YYYY')
-                  : '-'}
+                <DatePicker
+                  value={estimate.estimateDate ? dayjs(estimate.estimateDate) : null}
+                  format="MMMM D, YYYY"
+                  allowClear={false}
+                  variant="borderless"
+                  style={{ padding: 0 }}
+                  onChange={(d) => {
+                    if (d) {
+                      updateDatesMutation.mutate({
+                        estimate_date: d.format('YYYY-MM-DD'),
+                      });
+                    }
+                  }}
+                />
               </Descriptions.Item>
               <Descriptions.Item label="Valid Until">
-                {estimate.validUntil
-                  ? dayjs(estimate.validUntil).format('MMMM D, YYYY')
-                  : '-'}
+                <DatePicker
+                  value={estimate.validUntil ? dayjs(estimate.validUntil) : null}
+                  format="MMMM D, YYYY"
+                  variant="borderless"
+                  style={{ padding: 0 }}
+                  onChange={(d) => {
+                    updateDatesMutation.mutate({
+                      valid_until: d ? d.format('YYYY-MM-DD') : undefined,
+                    });
+                  }}
+                />
               </Descriptions.Item>
             </Descriptions>
           </Card>

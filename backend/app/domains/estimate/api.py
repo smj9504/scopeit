@@ -1026,6 +1026,40 @@ async def update_estimate_status(
     return EstimateResponse(**serialize_estimate(estimate))
 
 
+class EstimateDatesUpdate(BaseModel):
+    estimate_date: Optional[date] = None
+    valid_until: Optional[date] = None
+
+
+@router.patch("/{estimate_id}/dates", response_model=EstimateResponse)
+async def update_estimate_dates(
+    estimate_id: str,
+    data: EstimateDatesUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update estimate date and/or valid_until date."""
+    estimate = db.query(Estimate).filter(
+        and_(
+            Estimate.id == estimate_id,
+            Estimate.company_id == current_user.company_id,
+        )
+    ).first()
+
+    if not estimate:
+        raise HTTPException(status_code=404, detail="Estimate not found")
+
+    if data.estimate_date is not None:
+        estimate.estimate_date = data.estimate_date
+    if data.valid_until is not None:
+        estimate.valid_until = data.valid_until
+
+    db.commit()
+    db.refresh(estimate)
+
+    return EstimateResponse(**serialize_estimate(estimate))
+
+
 @router.post("/{estimate_id}/convert")
 async def convert_to_invoice(
     estimate_id: str,

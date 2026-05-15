@@ -233,6 +233,17 @@ export const estimateService = {
   },
 
   /**
+   * Update estimate dates (estimate_date and/or valid_until)
+   */
+  updateDates: async (
+    id: string,
+    dates: { estimate_date?: string; valid_until?: string }
+  ): Promise<Estimate> => {
+    const response = await api.patch<any>(`/estimates/${id}/dates`, dates);
+    return estimateService.transformEstimate(response.data);
+  },
+
+  /**
    * Send estimate by email
    */
   send: async (
