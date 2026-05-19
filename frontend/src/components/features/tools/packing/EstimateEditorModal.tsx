@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Modal,
   Button,
@@ -33,7 +33,10 @@ import {
   BankOutlined,
   DownOutlined,
   RightOutlined,
+  FolderOpenOutlined,
 } from '@ant-design/icons';
+import { toolService } from '@/services/toolService';
+import type { ToolSession } from '@/types/tools';
 import ReportExportModal from './ReportExportModal';
 import type { ColumnsType } from 'antd/es/table';
 import { colors, fonts, borderRadius } from '@/styles/theme';
@@ -98,6 +101,46 @@ function sortSections(sections: Record<string, number>): [string, number][] {
     if (bi === -1) return -1;
     return ai - bi;
   });
+}
+
+function isTransportSection(name: string): boolean {
+  return /transport/i.test(name);
+}
+
+/** Regenerate scheduling notes from current section_details + crew size. */
+function generateSchedulingNotes(
+  sectionDetails: Record<string, { lines: SectionDetailLine[] }> | undefined,
+  crewSize: number,
+): string[] {
+  const notes: string[] = [];
+  const crewN = Math.max(1, crewSize);
+  const packOutLines = sectionDetails?.['Pack-Out Labor']?.lines ?? [];
+  const packBackLines = sectionDetails?.['Pack-Back Labor']?.lines ?? [];
+  const poCrewLine = packOutLines.find((l) => l.unit === 'HR' && /crew/i.test(l.name));
+  const pbCrewLine = packBackLines.find((l) => l.unit === 'HR' && /crew/i.test(l.name));
+  const poElapsed = poCrewLine ? Math.round((poCrewLine.qty / crewN) * 10) / 10 : 0;
+  const pbElapsed = pbCrewLine ? Math.round((pbCrewLine.qty / crewN) * 10) / 10 : 0;
+  const totalElapsed = Math.round((poElapsed + pbElapsed) * 10) / 10;
+
+  if (totalElapsed <= 0) return notes;
+
+  const parts: string[] = [];
+  if (poElapsed > 0) parts.push(`pack-out ${poElapsed} hrs`);
+  if (pbElapsed > 0) parts.push(`pack-back ${pbElapsed} hrs`);
+  const totalManHrs = Math.round(totalElapsed * crewN * 10) / 10;
+  notes.push(
+    `Scheduling: ${parts.join(' + ')} = ${totalElapsed} elapsed hrs` +
+      ` · crew of ${crewN} · ${totalManHrs} man-hrs total`,
+  );
+
+  if (totalElapsed > 8) {
+    const workDays = Math.ceil(totalElapsed / 8);
+    notes.push(
+      `On-site time exceeds a standard 8-hr workday — ` +
+        `recommend scheduling ${workDays} day${workDays > 1 ? 's' : ''}.`,
+    );
+  }
+  return notes;
 }
 
 // ── Interfaces ────────────────────────────────────────────────────────────────
@@ -359,6 +402,273 @@ const SectionLineTable: React.FC<SectionLineTableProps> = ({
   );
 };
 
+// ── Labor Hours Card ──────────────────────────────────────────────────────────
+
+interface LaborHoursCardProps {
+  result: EstimateResponse;
+  onChangeHours: (sectionName: string, lineIndex: number, newQty: number) => void;
+}
+
+const LaborHoursCard: React.FC<LaborHoursCardProps> = ({ result, onChangeHours }) => {
+  const crewN = Math.max(1, result.crew_size);
+
+  const isCrewLine = (line: SectionDetailLine) => /crew/i.test(line.detail || '');
+  const toElapsed = (line: SectionDetailLine) =>
+    isCrewLine(line) ? Math.round((line.qty / crewN) * 10) / 10 : line.qty;
+  const toPersonHours = (elapsed: number, line: SectionDetailLine) =>
+    isCrewLine(line) ? Math.round(elapsed * crewN * 10) / 10 : elapsed;
+
+  const [localValues, setLocalValues] = useState<Record<string, number>>({});
+
+  const prevResultRef = useRef(result);
+  useEffect(() => {
+    if (prevResultRef.current !== result) {
+      setLocalValues({});
+      prevResultRef.current = result;
+    }
+  }, [result]);
+
+  const getKey = (secName: string, lineIndex: number) => `${secName}||${lineIndex}`;
+  const getDisplayValue = (secName: string, lineIndex: number, line: SectionDetailLine) =>
+    localValues[getKey(secName, lineIndex)] ?? toElapsed(line);
+
+  const handleChange = (secName: string, lineIndex: number, line: SectionDetailLine, v: number | null) => {
+    const elapsed = v ?? 0;
+    setLocalValues((prev) => ({ ...prev, [getKey(secName, lineIndex)]: elapsed }));
+    onChangeHours(secName, lineIndex, toPersonHours(elapsed, line));
+  };
+
+  const laborSections: [string, SectionDetailLine[]][] = [];
+  for (const secName of ['Pack-Out Labor', 'Pack-Back Labor']) {
+    const lines = result.section_details?.[secName]?.lines ?? [];
+    if (lines.some((l) => l.unit === 'HR')) {
+      laborSections.push([secName, lines]);
+    }
+  }
+
+  const carryLines: { label: string; secName: string; lineIndex: number; line: SectionDetailLine }[] = [];
+  for (const [secName, detail] of Object.entries(result.section_details ?? {})) {
+    if (isTransportSection(secName)) {
+      detail.lines.forEach((line, i) => {
+        if (line.unit === 'HR') {
+          carryLines.push({
+            label: /out/i.test(secName) ? 'Carry-Out' : 'Carry-In',
+            secName,
+            lineIndex: i,
+            line,
+          });
+        }
+      });
+    }
+  }
+
+  const otherLaborSections: [string, SectionDetailLine[]][] = [];
+  for (const [secName, detail] of Object.entries(result.section_details ?? {})) {
+    if (
+      /labor|labour/i.test(secName) &&
+      secName !== 'Pack-Out Labor' &&
+      secName !== 'Pack-Back Labor' &&
+      !isTransportSection(secName)
+    ) {
+      if (detail.lines.some((l) => l.unit === 'HR')) {
+        otherLaborSections.push([secName, detail.lines]);
+      }
+    }
+  }
+
+  if (laborSections.length === 0 && carryLines.length === 0 && otherLaborSections.length === 0) {
+    return null;
+  }
+
+  // Compute total elapsed hours for summary badge
+  const poCrewLine = (result.section_details?.['Pack-Out Labor']?.lines ?? []).find(
+    (l) => l.unit === 'HR' && /crew/i.test(l.name),
+  );
+  const pbCrewLine = (result.section_details?.['Pack-Back Labor']?.lines ?? []).find(
+    (l) => l.unit === 'HR' && /crew/i.test(l.name),
+  );
+  const poElapsed = poCrewLine
+    ? (localValues[getKey('Pack-Out Labor', (result.section_details?.['Pack-Out Labor']?.lines ?? []).indexOf(poCrewLine))] ?? toElapsed(poCrewLine))
+    : 0;
+  const pbElapsed = pbCrewLine
+    ? (localValues[getKey('Pack-Back Labor', (result.section_details?.['Pack-Back Labor']?.lines ?? []).indexOf(pbCrewLine))] ?? toElapsed(pbCrewLine))
+    : 0;
+  const totalElapsed = Math.round((poElapsed + pbElapsed) * 10) / 10;
+
+  // ── Row renderer ──────────────────────────────────────────────────────────
+  const renderRow = (
+    secName: string,
+    lineIndex: number,
+    line: SectionDetailLine,
+    sublabel?: string,
+  ) => {
+    const isCrew = isCrewLine(line);
+    const displayVal = getDisplayValue(secName, lineIndex, line);
+    return (
+      <div
+        key={`${secName}-${lineIndex}`}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 108px 68px',
+          alignItems: 'center',
+          gap: 8,
+          padding: '7px 0',
+          borderBottom: `1px solid ${colors.bgLight}`,
+        }}
+      >
+        {/* Name column */}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Text
+              ellipsis={{ tooltip: line.name }}
+              style={{ fontSize: 13, color: colors.textPrimary, fontFamily: fonts.body, lineHeight: '18px' }}
+            >
+              {line.name}
+            </Text>
+            {isCrew && (
+              <span style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: colors.textMuted,
+                background: colors.bgLight,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 4,
+                padding: '0 5px',
+                lineHeight: '16px',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}>
+                ×{crewN}
+              </span>
+            )}
+          </div>
+          {sublabel && (
+            <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: '16px' }}>
+              {sublabel}
+            </Text>
+          )}
+        </div>
+
+        {/* Hours input column */}
+        <InputNumber
+          size="small"
+          min={0}
+          step={0.5}
+          value={displayVal}
+          onChange={(v) => handleChange(secName, lineIndex, line, v)}
+          style={{ width: '100%', fontSize: 13 }}
+          suffix={<Text style={{ fontSize: 11, color: colors.textMuted }}>hr</Text>}
+        />
+
+        {/* Amount column */}
+        <Text style={{
+          fontSize: 13,
+          color: colors.textSecondary,
+          textAlign: 'right',
+          fontFamily: fonts.body,
+          whiteSpace: 'nowrap',
+        }}>
+          {fmt(line.amount)}
+        </Text>
+      </div>
+    );
+  };
+
+  // ── Section label ──────────────────────────────────────────────────────────
+  const renderSectionLabel = (label: string) => (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 12,
+      marginBottom: 2,
+    }}>
+      <Text style={{
+        fontSize: 10,
+        fontWeight: 700,
+        color: colors.textMuted,
+        textTransform: 'uppercase',
+        letterSpacing: 0.8,
+        whiteSpace: 'nowrap',
+      }}>
+        {label}
+      </Text>
+      <div style={{ flex: 1, height: 1, background: colors.border }} />
+    </div>
+  );
+
+  return (
+    <Card
+      style={{ border: `1px solid ${colors.border}`, borderRadius: borderRadius.lg, marginBottom: 16 }}
+      styles={{ body: { padding: '14px 16px 10px' } }}
+    >
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <Title level={5} style={{ margin: 0, fontFamily: fonts.heading, fontSize: 14 }}>
+          Labor Hours
+        </Title>
+        {totalElapsed > 0 && (
+          <div style={{
+            background: colors.bgLight,
+            border: `1px solid ${colors.border}`,
+            borderRadius: 20,
+            padding: '2px 10px',
+            fontSize: 12,
+            color: colors.textSecondary,
+            fontFamily: fonts.body,
+          }}>
+            {totalElapsed} hr elapsed
+          </div>
+        )}
+      </div>
+
+      {/* ── Column header ── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 108px 68px',
+        gap: 8,
+        paddingBottom: 4,
+        borderBottom: `1px solid ${colors.border}`,
+        marginBottom: 2,
+      }}>
+        <Text style={{ fontSize: 10, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 }}>Item</Text>
+        <Text style={{ fontSize: 10, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, textAlign: 'center' }}>Hours</Text>
+        <Text style={{ fontSize: 10, color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, textAlign: 'right' }}>Cost</Text>
+      </div>
+
+      {/* ── Pack-Out / Pack-Back ── */}
+      {laborSections.map(([secName, lines], si) => (
+        <div key={secName}>
+          {renderSectionLabel(secName.replace(' Labor', ''))}
+          {lines.filter((l) => l.unit === 'HR').map((line, i) =>
+            renderRow(secName, lines.indexOf(line), line)
+          )}
+        </div>
+      ))}
+
+      {/* ── Carry Labor ── */}
+      {carryLines.length > 0 && (
+        <div>
+          {renderSectionLabel('Carry')}
+          {carryLines.map(({ label, secName, lineIndex, line }) =>
+            renderRow(secName, lineIndex, line, label)
+          )}
+        </div>
+      )}
+
+      {/* ── Other Labor ── */}
+      {otherLaborSections.map(([secName, lines]) => (
+        <div key={secName}>
+          {renderSectionLabel(secName)}
+          {lines.filter((l) => l.unit === 'HR').map((line, i) =>
+            renderRow(secName, lines.indexOf(line), line)
+          )}
+        </div>
+      ))}
+    </Card>
+  );
+};
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
@@ -383,6 +693,18 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
   // ── Local state ────────────────────────────────────────────────────────────
   const [editing, setEditing] = useState<EditingState | null>(null);
   const [taxRate, setTaxRate] = useState<number>(0);
+
+  // Seed scheduling notes on first open if backend returned none
+  useEffect(() => {
+    if (!result) return;
+    if (!result.notes || result.notes.length === 0) {
+      const seeded = generateSchedulingNotes(result.section_details, result.crew_size);
+      if (seeded.length > 0) {
+        setResult((prev) => prev ? { ...prev, notes: seeded } : prev);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result?.id, result?.created_at]);
   const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
   const [showCompanyOverride, setShowCompanyOverride] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -393,6 +715,11 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
   // Add section state
   const [newSectionName, setNewSectionName] = useState('');
   const [showAddSection, setShowAddSection] = useState(false);
+
+  // Load saved estimate state
+  const [showLoadModal, setShowLoadModal] = useState(false);
+  const [savedSessions, setSavedSessions] = useState<ToolSession[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // ── Derived totals ─────────────────────────────────────────────────────────
   const computedGrandTotal = useMemo(() => {
@@ -489,6 +816,7 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
         op_amount: opAmount,
         contingency_amount: contingencyAmount,
         grand_total: subtotal + opAmount + contingencyAmount + (prev.supplements_total || 0),
+        notes: generateSchedulingNotes(details, prev.crew_size),
       };
     });
 
@@ -496,6 +824,72 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
   }, [editing, setResult]);
 
   const handleCancelEdit = useCallback(() => setEditing(null), []);
+
+  // ── Labor Hours change (from Labor Hours card) ─────────────────────────────
+
+  const handleLaborHoursChange = useCallback(
+    (sectionName: string, lineIndex: number, newQty: number) => {
+      setResult((prev) => {
+        if (!prev) return prev;
+        const details = { ...(prev.section_details ?? {}) };
+        if (!details[sectionName]) return prev;
+
+        const lines = [...details[sectionName].lines];
+        const line = lines[lineIndex];
+        const newAmount = Math.round(newQty * line.rate * 100) / 100;
+        // Also update the elapsed hrs in detail text (e.g. "11.5 elapsed hr · 4-person crew ...")
+        const crewN = Math.max(1, prev.crew_size);
+        const isCrewLine = /crew/i.test(line.detail || '');
+        const newElapsed = isCrewLine
+          ? Math.round((newQty / crewN) * 10) / 10
+          : null;
+        const newManHrs = isCrewLine ? Math.round(newQty * 10) / 10 : null;
+        const newDetail =
+          newElapsed !== null && line.detail
+            ? line.detail
+                .replace(/^[\d.]+(\s*elapsed hr)/, `${newElapsed}$1`)
+                .replace(/([\d.]+)(\s*man-hr)/, `${newManHrs}$2`)
+            : line.detail;
+        lines[lineIndex] = { ...line, qty: newQty, amount: newAmount, detail: newDetail };
+
+        const sectionTotal = lines.reduce((sum, l) => sum + l.amount, 0);
+        const newSections = { ...prev.sections, [sectionName]: sectionTotal };
+        const subtotal = Object.values(newSections).reduce((s, v) => s + v, 0);
+        const opAmount = prev.include_op ? subtotal * (prev.op_rate / 100) : 0;
+        const contingencyAmount = prev.include_contingency
+          ? subtotal * (prev.contingency_rate / 100)
+          : 0;
+
+        const updatedDetails = { ...details, [sectionName]: { lines } };
+
+        // Recalculate total_hours (elapsed) from main crew lines
+        const poCrewLine = updatedDetails['Pack-Out Labor']?.lines.find(
+          (l) => l.unit === 'HR' && /crew/i.test(l.name),
+        );
+        const pbCrewLine = updatedDetails['Pack-Back Labor']?.lines.find(
+          (l) => l.unit === 'HR' && /crew/i.test(l.name),
+        );
+        const newTotalHours =
+          Math.round(
+            (((poCrewLine?.qty ?? 0) + (pbCrewLine?.qty ?? 0)) / crewN) * 10,
+          ) / 10;
+
+        return {
+          ...prev,
+          sections: newSections,
+          section_details: updatedDetails,
+          subtotal,
+          op_amount: opAmount,
+          contingency_amount: contingencyAmount,
+          grand_total:
+            subtotal + opAmount + contingencyAmount + (prev.supplements_total || 0),
+          total_hours: newTotalHours,
+          notes: generateSchedulingNotes(updatedDetails, prev.crew_size),
+        };
+      });
+    },
+    [setResult],
+  );
 
   const handleDeleteLine = useCallback(
     (sectionName: string, lineIndex: number) => {
@@ -529,14 +923,16 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
           const contingencyAmount = prev.include_contingency
             ? subtotal * (prev.contingency_rate / 100)
             : 0;
+          const updatedDetails = { ...details, [sectionName]: { lines } };
           return {
             ...prev,
             sections: newSections,
-            section_details: { ...details, [sectionName]: { lines } },
+            section_details: updatedDetails,
             subtotal,
             op_amount: opAmount,
             contingency_amount: contingencyAmount,
             grand_total: subtotal + opAmount + contingencyAmount + (prev.supplements_total || 0),
+            notes: generateSchedulingNotes(updatedDetails, prev.crew_size),
           };
         }
 
@@ -564,6 +960,7 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
           op_amount: opAmount,
           contingency_amount: contingencyAmount,
           grand_total: subtotal + opAmount + contingencyAmount + (prev.supplements_total || 0),
+          notes: generateSchedulingNotes(details, prev.crew_size),
         };
       });
     },
@@ -653,6 +1050,40 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
     });
     setNewSectionName('');
     setShowAddSection(false);
+  };
+
+  // ── Load saved estimate handlers ───────────────────────────────────────────
+
+  const handleOpenLoadModal = async () => {
+    setShowLoadModal(true);
+    setLoadingHistory(true);
+    try {
+      const sessions = await toolService.listSessions('packing');
+      // List endpoint strips heavy data — filter by status and exclude current session
+      const withResult = sessions.filter(
+        (s) => (s.data as any)?.status === 'completed' && s.id !== activeSessionId,
+      );
+      setSavedSessions(withResult);
+    } catch {
+      message.error('Failed to load saved estimates');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleLoadSession = async (session: ToolSession) => {
+    try {
+      const full = await toolService.getSession(session.id);
+      const d = full.data as any;
+      if (d?.result) {
+        setResult(d.result);
+        if (d?.client_info) setClientInfo(d.client_info);
+        message.success(`Loaded: ${session.name}`);
+      }
+      setShowLoadModal(false);
+    } catch {
+      message.error('Failed to load estimate');
+    }
   };
 
   // ── O&P / Contingency handlers ─────────────────────────────────────────────
@@ -1242,6 +1673,9 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
             </Row>
           </Card>
 
+          {/* ── Labor Hours Card ────────────────────────────────────────────── */}
+          <LaborHoursCard result={result} onChangeHours={handleLaborHoursChange} />
+
           {/* ── Scheduling Notes ─────────────────────────────────────────────── */}
           {result.notes && result.notes.length > 0 && (
             <div style={{ marginBottom: 16 }}>
@@ -1249,7 +1683,7 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
                 <Alert
                   key={i}
                   message={note}
-                  type="warning"
+                  type={note.startsWith('Scheduling:') ? 'info' : 'warning'}
                   showIcon
                   style={{ marginBottom: i < result.notes!.length - 1 ? 8 : 0 }}
                 />
@@ -1638,6 +2072,14 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
         }}
       >
         <Button
+          icon={<FolderOpenOutlined />}
+          onClick={handleOpenLoadModal}
+          size={isMobile ? 'small' : 'middle'}
+          style={{ borderColor: colors.border, marginRight: 4 }}
+        >
+          {!isMobile && 'Load Saved'}
+        </Button>
+        <Button
           icon={<FilePdfOutlined />}
           loading={exporting === 'pdf'}
           onClick={handleExportPdf}
@@ -1684,6 +2126,80 @@ export const EstimateEditorModal: React.FC<EstimateEditorModalProps> = ({
           </Button>
         )}
       </div>
+
+      {/* Load Saved Estimate Modal */}
+      <Modal
+        open={showLoadModal}
+        onCancel={() => setShowLoadModal(false)}
+        footer={null}
+        title="Load Saved Estimate"
+        width={480}
+        styles={{ body: { padding: '12px 0 0' } }}
+      >
+        {loadingHistory ? (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: colors.textMuted }}>
+            Loading...
+          </div>
+        ) : savedSessions.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: colors.textMuted }}>
+            No saved estimates found.
+          </div>
+        ) : (
+          <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            {savedSessions.map((session) => {
+              const d = session.data as any;
+              const mode: string = d?.mode ?? 'quick';
+              const address: string = d?.client_info?.property_address ?? '';
+              const updatedAt = new Date(session.updatedAt).toLocaleDateString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric',
+              });
+              return (
+                <div
+                  key={session.id}
+                  onClick={() => handleLoadSession(session)}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 20px',
+                    borderBottom: `1px solid ${colors.border}`,
+                    cursor: 'pointer',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = colors.bgLight)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <Text
+                      strong
+                      ellipsis
+                      style={{ fontSize: 13, display: 'block', fontFamily: fonts.heading }}
+                    >
+                      {session.name}
+                    </Text>
+                    {address && (
+                      <Text
+                        ellipsis
+                        style={{ fontSize: 12, color: colors.textSecondary, display: 'block' }}
+                      >
+                        {address}
+                      </Text>
+                    )}
+                    <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                      {updatedAt}
+                    </Text>
+                  </div>
+                  <div style={{ flexShrink: 0, textAlign: 'right', marginLeft: 12 }}>
+                    <Tag style={{ fontSize: 10 }}>
+                      {mode === 'content' ? 'Photo AI' : 'Quick'}
+                    </Tag>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Modal>
 
       {/* Report Export Modal */}
       <ReportExportModal
