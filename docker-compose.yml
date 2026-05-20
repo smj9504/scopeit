@@ -28,7 +28,7 @@ services:
       - CORS_ORIGINS=http://localhost:3001
       - BETA_MODE=True
       - BETA_END_DATE=2026-06-30
-      # Google OAuth
+      # Google OAuth (set in .env file)
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:8001/api/auth/google/callback}
