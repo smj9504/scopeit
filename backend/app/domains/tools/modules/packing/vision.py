@@ -126,12 +126,17 @@ PASS1_TOOL = {
                     "baskets, freestanding lamps (table/floor lamps ONLY), books, artwork, "
                     "bedding, clothing, freestanding appliances (fridge, washer/dryer, stove), "
                     "wall-mounted TVs, gym/exercise equipment. "
+                    "IMPORTANT FOR KITCHENS: also include INFERRED contents inside closed "
+                    "cabinets (dishes, glassware, pots, pans, utensils, food storage) — "
+                    "these are not visible but must be packed. Estimate quantities based on "
+                    "the number and size of cabinets visible. "
                     "EXCLUDE anything permanently attached to the building structure — "
                     "ALL ceiling/wall lights (recessed, pendant, chandelier, sconce, track), "
                     "ceiling fans, bathtub, toilet, shower, built-in kitchen/bathroom cabinets, "
                     "kitchen islands (unless clearly a rolling cart), countertops, backsplash, "
                     "built-in shelving, HVAC vents, thermostats, ALL window treatments "
                     "(blinds, shades, shutters), smoke detectors, towel bars. "
+                    "NOTE: cabinets themselves are excluded (fixed), but contents INSIDE are included. "
                     "KEY TEST: if removing it requires cutting plumbing, unscrewing from "
                     "wall/ceiling, or structural work → EXCLUDE. If it can be carried out "
                     "as-is → INCLUDE."
@@ -366,6 +371,39 @@ def _build_pass1_tool_prompt(
             "Only report items NOT on this list.\n"
         )
 
+    # Detect kitchen rooms for cabinet content inference
+    room_lower = room_name.lower()
+    is_kitchen = any(kw in room_lower for kw in ["kitchen", "pantry"])
+
+    kitchen_cabinet_note = ""
+    if is_kitchen:
+        kitchen_cabinet_note = """
+STEP 2.5 — INFER CABINET CONTENTS (KITCHEN ONLY):
+Kitchen cabinets are typically CLOSED in photos, but their contents MUST be packed.
+You MUST estimate what is inside the cabinets based on the number and size of
+cabinets visible. Do NOT skip items just because cabinet doors are closed.
+
+Count visible cabinets (upper and lower) and estimate contents:
+- Per UPPER cabinet (standard ~30" wide): ~8-12 items (plates, bowls, cups, glasses)
+- Per LOWER cabinet (standard ~30" wide): ~5-8 items (pots, pans, baking sheets, mixing bowls)
+- Drawers: ~10-15 items each (utensils, gadgets, towels)
+- Pantry cabinet: ~20-30 items (canned goods, dry food, containers)
+
+Based on the number of cabinets visible, include these INFERRED items:
+- "Dish Set" with estimated qty (typically 20-40 pieces per household)
+- "Glassware Set" with estimated qty (typically 12-20 pieces)
+- "Mug Set" with estimated qty (typically 8-12 pieces)
+- "Pot and Pan Set" qty=1 (typically 8-12 pieces as a set)
+- "Utensil Set" qty=1 (silverware, cooking utensils)
+- "Mixing Bowl Set" qty=1
+- "Bakeware Set" qty=1
+- "Food Storage Containers" with estimated qty (typically 10-15 pieces)
+
+Scale UP for large/chef's kitchens (many cabinets) and DOWN for small kitchens (few cabinets).
+For items you are inferring (not directly visible), set confidence to 0.80-0.85.
+These are standard household kitchen contents that virtually every kitchen has.
+"""
+
     return f"""You are a professional Content Pack-Out Estimator. Analyze the photo(s) of a "{room_name}" and list every packable item.
 {multi_note}{existing_note}
 STEP 1 — FIND ALL LARGE ITEMS FIRST:
@@ -385,11 +423,12 @@ Bundle small related items into groups:
 - Small kitchenware → "Kitchen Utensils Set" qty=1
 - Small toiletries → "Bathroom Sundries" qty=estimated count
 - Small scattered items → "Miscellaneous Small Items" qty=estimated count
-
+{kitchen_cabinet_note}
 STEP 3 — EXCLUDE FIXED STRUCTURES:
 EXCLUDE anything attached to the building: ceiling lights, ceiling fans, blinds, built-in cabinets, kitchen islands, toilets, bathtubs, wall-mounted mirrors, wall-mounted pull-up bars, HVAC vents, smoke detectors.
 INCLUDE freestanding items even if heavy: refrigerator, washer, dryer, freestanding shelves, wall-mounted TVs.
 Simple test: can it be picked up and carried out? → INCLUDE. Requires unscrewing/cutting pipes? → EXCLUDE.
+NOTE: Built-in cabinets themselves are EXCLUDED (fixed structures), but the CONTENTS inside cabinets MUST be included as packable items.
 
 NAMING:
 - Include size info that affects packing: "Queen Bed Frame", "4-Drawer Dresser", "3-Section Sectional Sofa"

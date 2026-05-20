@@ -13,16 +13,12 @@ import {
   InputNumber,
   Switch,
   Radio,
-  Space,
   Tooltip,
   Button,
   message,
   Popconfirm,
-  Typography,
 } from 'antd';
 import { InfoCircleOutlined, SaveOutlined, DeleteOutlined } from '@ant-design/icons';
-
-const { Text } = Typography;
 import { colors, fonts, borderRadius } from '@/styles/theme';
 import { REGION_OPTIONS, DEFAULT_SETTINGS } from './constants';
 import { packingApi } from './packingApi';
@@ -143,16 +139,28 @@ const SharedDetailsStep: React.FC<SharedDetailsStepProps> = ({
 
   // ── Shared helpers ─────────────────────────────────────────────────────────
 
+  const sectionCard = (children: React.ReactNode) => (
+    <div
+      style={{
+        background: colors.bgWhite,
+        border: `1px solid ${colors.border}`,
+        borderRadius: borderRadius.lg,
+        padding: '20px',
+      }}
+    >
+      {children}
+    </div>
+  );
+
   const sectionTitle = (text: string) => (
     <h4
       style={{
         fontFamily: fonts.heading,
-        fontSize: 15,
-        fontWeight: 700,
+        fontSize: 14,
+        fontWeight: 600,
         color: colors.textPrimary,
         margin: '0 0 16px',
-        paddingBottom: 8,
-        borderBottom: `1px solid ${colors.border}`,
+        letterSpacing: '-0.01em',
       }}
     >
       {text}
@@ -162,285 +170,332 @@ const SharedDetailsStep: React.FC<SharedDetailsStepProps> = ({
   const fieldLabel = (text: string, tip?: string) => (
     <label
       style={{
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: 500,
-        color: colors.textSecondary,
+        color: colors.textMuted,
         display: 'flex',
         alignItems: 'center',
         gap: 4,
         marginBottom: 6,
+        textTransform: 'uppercase' as const,
+        letterSpacing: '0.04em',
       }}
     >
       {text}
       {tip && (
         <Tooltip title={tip}>
-          <InfoCircleOutlined style={{ fontSize: 12, color: colors.textMuted }} />
+          <InfoCircleOutlined style={{ fontSize: 11, color: colors.textMuted }} />
         </Tooltip>
       )}
     </label>
   );
 
+  const switchRow = (
+    label: string,
+    tip: string,
+    checked: boolean,
+    onChange: (val: boolean) => void,
+    extra?: React.ReactNode,
+  ) => (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 14px',
+        background: colors.bgLight,
+        borderRadius: borderRadius.md,
+        minHeight: 44,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: colors.textPrimary }}>{label}</span>
+        <Tooltip title={tip}>
+          <InfoCircleOutlined style={{ fontSize: 11, color: colors.textMuted }} />
+        </Tooltip>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {extra}
+        <Switch size="small" checked={checked} onChange={onChange} />
+      </div>
+    </div>
+  );
+
   // ── Estimation Settings block (reused in both full & compact modes) ──────
 
   const estimationSettingsBlock = (
-    <Row gutter={[16, 14]}>
-      <Col xs={24} sm={12} md={8}>
-        {fieldLabel('Crew Size', 'Number of workers on the job')}
-        <Select
-          value={settings.crew_size}
-          onChange={(val) => patchSettings({ crew_size: val })}
-          style={{ width: '100%' }}
-          options={[2, 3, 4, 5, 6].map((n) => ({
-            value: n,
-            label: `${n} workers`,
-          }))}
-          aria-label="Crew size"
-        />
-      </Col>
-      <Col xs={24} sm={12} md={8}>
-        {fieldLabel('Region', 'Affects labor rate multiplier')}
-        <Select
-          value={settings.region}
-          onChange={(val) => patchSettings({ region: val })}
-          style={{ width: '100%' }}
-          options={REGION_OPTIONS.map((o) => ({
-            value: o.value,
-            label: `${o.label}  ${o.description}`,
-          }))}
-          aria-label="Region"
-        />
-      </Col>
-      <Col xs={24} sm={24} md={8}>
-        {fieldLabel('Staging Type')}
-        <Radio.Group
-          value={settings.staging_type}
-          onChange={(e) => patchSettings({ staging_type: e.target.value })}
-          optionType="button"
-          buttonStyle="solid"
-          style={{ width: '100%', display: 'flex' }}
-        >
-          <Radio.Button value="off_site" style={{ flex: 1, textAlign: 'center', fontSize: 13, height: 32, lineHeight: '30px' }}>
-            Off-site
-          </Radio.Button>
-          <Radio.Button value="on_site" style={{ flex: 1, textAlign: 'center', fontSize: 13, height: 32, lineHeight: '30px' }}>
-            On-site
-          </Radio.Button>
-        </Radio.Group>
-      </Col>
-
-      {settings.staging_type === 'off_site' && (
-        <Col xs={24} sm={12} md={8}>
-          {fieldLabel('Storage Months', 'How long contents will be stored')}
-          <InputNumber
-            min={0}
-            max={36}
-            value={settings.storage_months}
-            onChange={(val) => patchSettings({ storage_months: val ?? 0 })}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {/* Row 1: Crew / Region / Staging */}
+      <Row gutter={[12, 12]}>
+        <Col xs={24} sm={8}>
+          {fieldLabel('Crew Size', 'Number of workers on the job')}
+          <Select
+            value={settings.crew_size}
+            onChange={(val) => patchSettings({ crew_size: val })}
             style={{ width: '100%' }}
-            addonAfter="mo"
-            aria-label="Storage months"
+            options={[2, 3, 4, 5, 6].map((n) => ({
+              value: n,
+              label: `${n} workers`,
+            }))}
+            aria-label="Crew size"
           />
         </Col>
-      )}
-
-      <Col xs={24} sm={12} md={8}>
-        {fieldLabel('Pack-back', 'Include return delivery / unpack service')}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-          <Switch
-            checked={settings.include_packback}
-            onChange={(val) => patchSettings({ include_packback: val })}
-            aria-label="Include pack-back"
+        <Col xs={24} sm={8}>
+          {fieldLabel('Region', 'Affects labor rate multiplier')}
+          <Select
+            value={settings.region}
+            onChange={(val) => patchSettings({ region: val })}
+            style={{ width: '100%' }}
+            options={REGION_OPTIONS.map((o) => ({
+              value: o.value,
+              label: `${o.label}  ${o.description}`,
+            }))}
+            aria-label="Region"
           />
-          <span style={{ fontSize: 13, color: colors.textSecondary }}>
-            {settings.include_packback ? 'Included' : 'Not included'}
-          </span>
-        </div>
-      </Col>
-    </Row>
+        </Col>
+        <Col xs={24} sm={8}>
+          {fieldLabel('Staging')}
+          <Radio.Group
+            value={settings.staging_type}
+            onChange={(e) => patchSettings({ staging_type: e.target.value })}
+            optionType="button"
+            buttonStyle="solid"
+            style={{ width: '100%', display: 'flex' }}
+          >
+            <Radio.Button value="off_site" style={{ flex: 1, textAlign: 'center', fontSize: 13, height: 36, lineHeight: '34px' }}>
+              Off-site
+            </Radio.Button>
+            <Radio.Button value="on_site" style={{ flex: 1, textAlign: 'center', fontSize: 13, height: 36, lineHeight: '34px' }}>
+              On-site
+            </Radio.Button>
+          </Radio.Group>
+        </Col>
+      </Row>
+
+      {/* Row 2: Conditional storage + toggles */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {settings.staging_type === 'off_site' && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              background: colors.bgLight,
+              borderRadius: borderRadius.md,
+              minHeight: 44,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: colors.textPrimary }}>Storage Duration</span>
+              <Tooltip title="How long contents will be stored">
+                <InfoCircleOutlined style={{ fontSize: 11, color: colors.textMuted }} />
+              </Tooltip>
+            </div>
+            <InputNumber
+              min={0}
+              max={36}
+              value={settings.storage_months}
+              onChange={(val) => patchSettings({ storage_months: val ?? 0 })}
+              style={{ width: 100 }}
+              addonAfter="mo"
+              size="small"
+              aria-label="Storage months"
+            />
+          </div>
+        )}
+        {switchRow(
+          'Pack-back',
+          'Include return delivery / unpack service',
+          settings.include_packback,
+          (val) => patchSettings({ include_packback: val }),
+        )}
+      </div>
+    </div>
   );
 
   // ── O&P block ─────────────────────────────────────────────────────────────
 
   const opContingencyBlock = (
-    <Row gutter={[16, 14]}>
-      {/* O&P */}
-      <Col xs={24} sm={12} md={8}>
-        {fieldLabel('O&P', 'Overhead & Profit percentage')}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-          <Switch
-            checked={settings.include_op}
-            onChange={(val) => patchSettings({ include_op: val })}
-            aria-label="Include O&P"
-          />
-          {settings.include_op ? (
-            <InputNumber
-              min={0}
-              max={30}
-              value={settings.op_rate}
-              onChange={(val) => patchSettings({ op_rate: val ?? DEFAULT_SETTINGS.op_rate })}
-              style={{ width: 100 }}
-              addonAfter="%"
-              step={0.5}
-              aria-label="O&P rate"
-            />
-          ) : (
-            <span style={{ fontSize: 13, color: colors.textSecondary }}>Not included</span>
-          )}
-        </div>
-      </Col>
-      <Col xs={24} sm={12}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <Text style={{ fontSize: 13, fontFamily: fonts.body }}>Material Rate</Text>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {switchRow(
+        'O&P',
+        'Overhead & Profit percentage',
+        settings.include_op,
+        (val) => patchSettings({ include_op: val }),
+        settings.include_op ? (
           <InputNumber
-            min={10}
-            max={40}
-            value={settings.material_rate ?? 25}
-            onChange={(val) => patchSettings({ material_rate: val ?? 25 })}
-            style={{ width: 100 }}
+            min={0}
+            max={30}
+            value={settings.op_rate}
+            onChange={(val) => patchSettings({ op_rate: val ?? DEFAULT_SETTINGS.op_rate })}
+            style={{ width: 80 }}
             addonAfter="%"
-            step={5}
-            aria-label="Material rate"
+            step={0.5}
+            size="small"
+            aria-label="O&P rate"
           />
+        ) : undefined,
+      )}
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 14px',
+          background: colors.bgLight,
+          borderRadius: borderRadius.md,
+          minHeight: 44,
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: colors.textPrimary }}>Material Rate</span>
+          <span style={{ fontSize: 11, color: colors.textMuted, marginTop: 1 }}>% of pack-out labor</span>
         </div>
-        <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
-          % of pack-out labor (industry: 15-25%)
-        </div>
-      </Col>
-      <Col xs={24}>
-        <div style={{ fontSize: 12, color: '#999' }}>
-          Supplements are auto-detected based on room conditions
-        </div>
-      </Col>
-    </Row>
+        <InputNumber
+          min={10}
+          max={40}
+          value={settings.material_rate ?? 25}
+          onChange={(val) => patchSettings({ material_rate: val ?? 25 })}
+          style={{ width: 80 }}
+          addonAfter="%"
+          step={5}
+          size="small"
+          aria-label="Material rate"
+        />
+      </div>
+
+      <p style={{ fontSize: 11, color: colors.textMuted, margin: '4px 0 0', paddingLeft: 2 }}>
+        Supplements are auto-detected based on room conditions
+      </p>
+    </div>
   );
 
   // ── Company Override block (shared between compact and full modes) ────────
 
   const companyOverrideBlock = (
     <section>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 16,
-          paddingBottom: 8,
-          borderBottom: `1px solid ${colors.border}`,
-        }}
-      >
-        <h4
-          style={{
-            fontFamily: fonts.heading,
-            fontSize: 15,
-            fontWeight: 700,
-            color: colors.textPrimary,
-            margin: 0,
-          }}
-        >
-          Company Override
-        </h4>
-        <Space size={8}>
-          <span style={{ fontSize: 13, color: colors.textSecondary }}>
-            {showCompanyOverride ? 'Shown' : 'Hidden'}
-          </span>
-          <Switch
-            size="small"
-            checked={showCompanyOverride}
-            onChange={setShowCompanyOverride}
-            aria-label="Toggle company override"
-          />
-        </Space>
-      </div>
-      {showCompanyOverride && (
+      {sectionCard(
         <>
-          {/* Saved profiles selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-            <Select
-              placeholder={profilesLoading ? 'Loading...' : 'Select saved company...'}
-              value={selectedProfileId}
-              onChange={handleSelectProfile}
-              loading={profilesLoading}
-              allowClear
-              onClear={() => {
-                setSelectedProfileId(undefined);
-                setCompanyOverride({});
-              }}
-              style={{ flex: 1 }}
-              size="middle"
-              options={profiles.map((p) => ({ value: p.id, label: p.label }))}
-              notFoundContent={
-                <span style={{ fontSize: 12, color: colors.textMuted }}>No saved profiles yet</span>
-              }
-            />
-            <Tooltip title="Save current as profile">
-              <Button
-                icon={<SaveOutlined />}
-                size="middle"
-                onClick={handleSaveProfile}
-                disabled={!companyOverride.name?.trim()}
-              />
-            </Tooltip>
-            {selectedProfileId && (
-              <Popconfirm
-                title="Delete this profile?"
-                onConfirm={() => handleDeleteProfile(selectedProfileId)}
-                okText="Delete"
-                cancelText="Cancel"
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: showCompanyOverride ? 16 : 0,
+            }}
+          >
+            <div>
+              <h4
+                style={{
+                  fontFamily: fonts.heading,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: colors.textPrimary,
+                  margin: 0,
+                  letterSpacing: '-0.01em',
+                }}
               >
-                <Button
-                  icon={<DeleteOutlined />}
-                  size="middle"
-                  danger
-                />
-              </Popconfirm>
-            )}
+                Company Override
+              </h4>
+              {!showCompanyOverride && (
+                <p style={{ fontSize: 12, color: colors.textMuted, margin: '4px 0 0' }}>
+                  Override company info on the exported estimate
+                </p>
+              )}
+            </div>
+            <Switch
+              size="small"
+              checked={showCompanyOverride}
+              onChange={setShowCompanyOverride}
+              aria-label="Toggle company override"
+            />
           </div>
 
-          <Row gutter={[16, 14]}>
-            <Col xs={24} sm={12}>
-              {fieldLabel('Company Name')}
-              <Input
-                placeholder="Restoration Co."
-                value={companyOverride.name ?? ''}
-                onChange={(e) => patchCompany({ name: e.target.value })}
-                aria-label="Company name override"
-              />
-            </Col>
-            <Col xs={24} sm={12}>
-              {fieldLabel('Address')}
-              <Input
-                placeholder="456 Business Ave"
-                value={companyOverride.address ?? ''}
-                onChange={(e) => patchCompany({ address: e.target.value })}
-                aria-label="Company address override"
-              />
-            </Col>
-            <Col xs={24} sm={12}>
-              {fieldLabel('Phone')}
-              <Input
-                placeholder="(555) 111-2222"
-                value={companyOverride.phone ?? ''}
-                onChange={(e) => patchCompany({ phone: e.target.value })}
-                aria-label="Company phone override"
-              />
-            </Col>
-            <Col xs={24} sm={12}>
-              {fieldLabel('Email')}
-              <Input
-                type="email"
-                placeholder="info@company.com"
-                value={companyOverride.email ?? ''}
-                onChange={(e) => patchCompany({ email: e.target.value })}
-                aria-label="Company email override"
-              />
-            </Col>
-          </Row>
+          {showCompanyOverride && (
+            <>
+              {/* Saved profiles selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <Select
+                  placeholder={profilesLoading ? 'Loading...' : 'Select saved company...'}
+                  value={selectedProfileId}
+                  onChange={handleSelectProfile}
+                  loading={profilesLoading}
+                  allowClear
+                  onClear={() => {
+                    setSelectedProfileId(undefined);
+                    setCompanyOverride({});
+                  }}
+                  style={{ flex: 1 }}
+                  size="middle"
+                  options={profiles.map((p) => ({ value: p.id, label: p.label }))}
+                  notFoundContent={
+                    <span style={{ fontSize: 12, color: colors.textMuted }}>No saved profiles yet</span>
+                  }
+                />
+                <Tooltip title="Save current as profile">
+                  <Button
+                    icon={<SaveOutlined />}
+                    size="middle"
+                    onClick={handleSaveProfile}
+                    disabled={!companyOverride.name?.trim()}
+                  />
+                </Tooltip>
+                {selectedProfileId && (
+                  <Popconfirm
+                    title="Delete this profile?"
+                    onConfirm={() => handleDeleteProfile(selectedProfileId)}
+                    okText="Delete"
+                    cancelText="Cancel"
+                  >
+                    <Button icon={<DeleteOutlined />} size="middle" danger />
+                  </Popconfirm>
+                )}
+              </div>
+
+              <Row gutter={[12, 12]}>
+                <Col xs={24} sm={12}>
+                  {fieldLabel('Company Name')}
+                  <Input
+                    placeholder="Restoration Co."
+                    value={companyOverride.name ?? ''}
+                    onChange={(e) => patchCompany({ name: e.target.value })}
+                    aria-label="Company name override"
+                  />
+                </Col>
+                <Col xs={24} sm={12}>
+                  {fieldLabel('Address')}
+                  <Input
+                    placeholder="456 Business Ave"
+                    value={companyOverride.address ?? ''}
+                    onChange={(e) => patchCompany({ address: e.target.value })}
+                    aria-label="Company address override"
+                  />
+                </Col>
+                <Col xs={24} sm={12}>
+                  {fieldLabel('Phone')}
+                  <Input
+                    placeholder="(555) 111-2222"
+                    value={companyOverride.phone ?? ''}
+                    onChange={(e) => patchCompany({ phone: e.target.value })}
+                    aria-label="Company phone override"
+                  />
+                </Col>
+                <Col xs={24} sm={12}>
+                  {fieldLabel('Email')}
+                  <Input
+                    type="email"
+                    placeholder="info@company.com"
+                    value={companyOverride.email ?? ''}
+                    onChange={(e) => patchCompany({ email: e.target.value })}
+                    aria-label="Company email override"
+                  />
+                </Col>
+              </Row>
+            </>
+          )}
         </>
-      )}
-      {!showCompanyOverride && (
-        <p style={{ fontSize: 13, color: colors.textMuted, margin: 0 }}>
-          Toggle on to override company info on the exported estimate.
-        </p>
       )}
     </section>
   );
@@ -449,13 +504,13 @@ const SharedDetailsStep: React.FC<SharedDetailsStepProps> = ({
 
   if (compact) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <section>
           <CustomerSelector value={customerData} onChange={handleCustomerChange} />
         </section>
         {companyOverrideBlock}
-        <section>{estimationSettingsBlock}</section>
-        <section>{opContingencyBlock}</section>
+        <section>{sectionCard(estimationSettingsBlock)}</section>
+        <section>{sectionCard(opContingencyBlock)}</section>
       </div>
     );
   }
@@ -463,7 +518,7 @@ const SharedDetailsStep: React.FC<SharedDetailsStepProps> = ({
   // ── Full mode: wizard step with section titles ───────────────────────────
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
       {/* ── Client Information (CustomerSelector) ──── */}
       <section>
@@ -479,14 +534,22 @@ const SharedDetailsStep: React.FC<SharedDetailsStepProps> = ({
 
       {/* ── Estimation Settings ──────────────────────────── */}
       <section>
-        {sectionTitle('Estimation Settings')}
-        {estimationSettingsBlock}
+        {sectionCard(
+          <>
+            {sectionTitle('Estimation Settings')}
+            {estimationSettingsBlock}
+          </>
+        )}
       </section>
 
-      {/* ── O&P ───────────────────────────────────────────── */}
+      {/* ── O&P & Materials ──────────────────────────────── */}
       <section>
-        {sectionTitle('O&P')}
-        {opContingencyBlock}
+        {sectionCard(
+          <>
+            {sectionTitle('Pricing')}
+            {opContingencyBlock}
+          </>
+        )}
       </section>
     </div>
   );
