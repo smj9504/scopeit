@@ -127,8 +127,12 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings based on environment"""
     env = os.getenv("ENV", "local")
-    env_file = f".env.{env}" if os.path.exists(f".env.{env}") else ".env.local"
-    return Settings(_env_file=env_file)
+    if env == "production":
+        # In production (Render), env vars are set directly — no .env file needed
+        env_file = ".env.production" if os.path.exists(".env.production") else None
+    else:
+        env_file = f".env.{env}" if os.path.exists(f".env.{env}") else ".env.local"
+    return Settings(_env_file=env_file) if env_file else Settings()
 
 
 settings = get_settings()

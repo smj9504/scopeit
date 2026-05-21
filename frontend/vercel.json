@@ -9,9 +9,6 @@
       "destination": "/index.html"
     }
   ],
-  "env": {
-    "VITE_API_URL": "https://api.scopeit.work/api"
-  },
   "headers": [
     {
       "source": "/assets/(.*)",

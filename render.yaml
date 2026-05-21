@@ -6,10 +6,10 @@ services:
   - type: web
     name: scopeit-api
     runtime: python
-    plan: starter  # $7/month (upgrade to standard if OOM)
+    plan: free
     region: oregon
-    buildCommand: pip install -r requirements.txt && alembic upgrade head
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd /opt/render/project/src/backend && alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT
     rootDir: backend
     autoDeploy: true
     healthCheckPath: /health
@@ -18,22 +18,31 @@ services:
         value: production
       - key: DEBUG
         value: "False"
-      # NeonDB (external - set in dashboard)
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      # NeonDB (set in dashboard)
       - key: DATABASE_URL
         sync: false
       - key: SECRET_KEY
         generateValue: true
+      # CORS - update after Vercel deploy (add your Vercel URL)
       - key: CORS_ORIGINS
-        value: https://scopeit.work,https://www.scopeit.work
+        sync: false
       - key: FRONTEND_URL
-        value: https://scopeit.work
+        sync: false
+      # Google OAuth (set in dashboard)
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       - key: GOOGLE_REDIRECT_URI
-        value: https://api.scopeit.work/api/auth/google/callback
+        sync: false
+      # Beta
       - key: BETA_MODE
         value: "True"
       - key: BETA_END_DATE
         value: "2026-06-30"
-      # Cloudflare R2
+      # Cloudflare R2 (set in dashboard)
       - key: STORAGE_PROVIDER
         value: r2
       - key: R2_ENDPOINT_URL
@@ -46,10 +55,6 @@ services:
         value: scopeit-uploads
       # External services (set in dashboard)
       - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: GOOGLE_CLIENT_ID
-        sync: false
-      - key: GOOGLE_CLIENT_SECRET
         sync: false
       - key: EMAIL_FROM
         value: noreply@scopeit.work

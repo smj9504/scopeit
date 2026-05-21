@@ -11,13 +11,18 @@ from app.core.config import settings
 
 
 # Create PostgreSQL engine
-engine = create_engine(
-    settings.DATABASE_URL,
+engine_kwargs = dict(
     pool_size=settings.DATABASE_POOL_SIZE,
     max_overflow=settings.DATABASE_MAX_OVERFLOW,
     pool_pre_ping=True,
-    echo=settings.DEBUG,
+    echo=settings.DEBUG and settings.ENV != "production",
 )
+
+# Neon requires SSL — pass connect_args if sslmode is in the URL
+if "sslmode=" in settings.DATABASE_URL:
+    engine_kwargs["connect_args"] = {"sslmode": "require"}
+
+engine = create_engine(settings.DATABASE_URL, **engine_kwargs)
 
 # Session factory
 SessionLocal = sessionmaker(
