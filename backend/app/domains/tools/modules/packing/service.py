@@ -1498,62 +1498,62 @@ class EstimateCalculator:
     # Per-category defaults: (base_labor_h, per_unit_labor_h, needs_disassembly, materials, method)
     CATEGORY_PACKING_RULES: Dict[str, dict] = {
         "Furniture": {
-            "base": 0.15, "per_unit": 0.40, "disassembly": False,
+            "base": 0.10, "per_unit": 0.28, "disassembly": False,
             "materials": ["moving_blanket", "moving_blanket", "stretch_wrap"],
             "method": "Wrap in moving blankets; secure with stretch wrap; protect corners.",
         },
         "Appliances": {
-            "base": 0.20, "per_unit": 0.45, "disassembly": False,
+            "base": 0.15, "per_unit": 0.30, "disassembly": False,
             "materials": ["moving_blanket", "moving_blanket", "stretch_wrap"],
             "method": "Disconnect; secure loose parts; wrap in blankets; dolly to staging.",
         },
         "Electronics": {
-            "base": 0.10, "per_unit": 0.25, "disassembly": False,
+            "base": 0.08, "per_unit": 0.18, "disassembly": False,
             "materials": ["medium_box", "bubble_wrap_12"],
             "method": "Wrap in bubble wrap; place in box with padding; label FRAGILE.",
         },
         "Books": {
-            "base": 0.25, "per_unit": 0.02, "disassembly": False,
+            "base": 0.15, "per_unit": 0.01, "disassembly": False,
             "materials": ["book_box"],
             "method": "Pack flat in book boxes (15-20 per box); do not overfill.",
         },
         "Fragile": {
-            "base": 0.20, "per_unit": 0.06, "disassembly": False,
+            "base": 0.15, "per_unit": 0.04, "disassembly": False,
             "materials": ["dish_pack_box", "packing_paper", "packing_paper"],
             "method": "Wrap each piece individually in packing paper; pack in dish-pack box with padding.",
         },
         "Artwork": {
-            "base": 0.15, "per_unit": 0.35, "disassembly": False,
+            "base": 0.10, "per_unit": 0.25, "disassembly": False,
             "materials": ["mirror_box", "bubble_wrap_12"],
             "method": "Wrap in bubble wrap; place in mirror/picture box; mark FRAGILE.",
         },
         "Kitchenware": {
-            "base": 0.20, "per_unit": 0.05, "disassembly": False,
+            "base": 0.15, "per_unit": 0.03, "disassembly": False,
             "materials": ["dish_pack_box", "packing_paper"],
             "method": "Wrap each item in packing paper; pack in dish-pack box; fill voids.",
         },
         "Clothing": {
-            "base": 0.20, "per_unit": 0.01, "disassembly": False,
+            "base": 0.10, "per_unit": 0.005, "disassembly": False,
             "materials": ["wardrobe_box"],
             "method": "Hanging garments in wardrobe box; fold remaining into medium box.",
         },
         "Collectibles": {
-            "base": 0.15, "per_unit": 0.08, "disassembly": False,
+            "base": 0.10, "per_unit": 0.05, "disassembly": False,
             "materials": ["small_box", "bubble_wrap_12", "packing_paper"],
             "method": "Wrap individually in bubble wrap; cushion with paper; label HIGH CARE.",
         },
         "Tools": {
-            "base": 0.15, "per_unit": 0.03, "disassembly": False,
+            "base": 0.10, "per_unit": 0.02, "disassembly": False,
             "materials": ["medium_box"],
             "method": "Group in medium boxes; wrap sharp edges; label HEAVY.",
         },
         "Sports": {
-            "base": 0.10, "per_unit": 0.30, "disassembly": False,
+            "base": 0.08, "per_unit": 0.20, "disassembly": False,
             "materials": ["moving_blanket", "stretch_wrap"],
             "method": "Wrap in blanket or pad; secure loose parts with stretch wrap.",
         },
         "Other": {
-            "base": 0.10, "per_unit": 0.15, "disassembly": False,
+            "base": 0.08, "per_unit": 0.10, "disassembly": False,
             "materials": ["medium_box", "packing_paper"],
             "method": "Wrap in packing paper; place in box; fill voids.",
         },
@@ -1561,64 +1561,64 @@ class EstimateCalculator:
 
     # Name-based overrides for specific item types
     ITEM_NAME_OVERRIDES: Dict[str, dict] = {
-        "bed frame": {"disassembly": True, "per_unit": 0.60,
+        "bed frame": {"disassembly": True, "per_unit": 0.40,
                       "materials": ["moving_blanket", "moving_blanket", "moving_blanket", "stretch_wrap"],
                       "method": "Disassemble; bag hardware; wrap rails and headboard in blankets."},
-        "sectional": {"per_unit": 0.45,
+        "sectional": {"per_unit": 0.30,
                       "materials": ["sofa_cover", "moving_blanket", "moving_blanket", "stretch_wrap"],
                       "method": "Separate sections; wrap each in sofa cover + blankets; stretch wrap."},
-        "sofa": {"per_unit": 0.50,
+        "sofa": {"per_unit": 0.35,
                  "materials": ["sofa_cover", "moving_blanket", "moving_blanket", "stretch_wrap"],
                  "method": "Cover with sofa cover; wrap in blankets; secure with stretch wrap."},
-        "wardrobe": {"disassembly": True, "per_unit": 0.75,
+        "wardrobe": {"disassembly": True, "per_unit": 0.50,
                      "materials": ["moving_blanket", "moving_blanket", "moving_blanket", "stretch_wrap"],
                      "method": "Remove shelves/drawers; disassemble if needed; wrap body in blankets."},
-        "dresser": {"per_unit": 0.35,
+        "dresser": {"per_unit": 0.25,
                     "materials": ["moving_blanket", "moving_blanket", "stretch_wrap"],
                     "method": "Tape drawers shut; wrap in blankets; stretch wrap to secure."},
-        "dining table": {"disassembly": True, "per_unit": 0.45,
+        "dining table": {"disassembly": True, "per_unit": 0.30,
                          "materials": ["moving_blanket", "moving_blanket", "stretch_wrap"],
                          "method": "Remove legs if possible; wrap top in blankets; bag hardware."},
-        "bookshelf": {"per_unit": 0.30,
+        "bookshelf": {"per_unit": 0.20,
                       "materials": ["moving_blanket", "moving_blanket", "stretch_wrap"],
                       "method": "Remove contents; wrap unit in blankets; stretch wrap shelves shut."},
-        "bookcase": {"per_unit": 0.30,
+        "bookcase": {"per_unit": 0.20,
                      "materials": ["moving_blanket", "moving_blanket", "stretch_wrap"],
                      "method": "Remove contents; wrap unit in blankets; stretch wrap shelves shut."},
-        "tv": {"per_unit": 0.30,
+        "tv": {"per_unit": 0.20,
                "materials": ["tv_box", "bubble_wrap_12", "bubble_wrap_12"],
                "method": "Wrap screen in bubble wrap; place in TV box; pad all sides."},
-        "monitor": {"per_unit": 0.30,
+        "monitor": {"per_unit": 0.20,
                     "materials": ["tv_box", "bubble_wrap_12"],
                     "method": "Wrap in bubble wrap; place in TV box with foam padding."},
-        "chair": {"per_unit": 0.25,
+        "chair": {"per_unit": 0.15,
                   "materials": ["chair_cover", "stretch_wrap"],
                   "method": "Apply chair cover; wrap legs with stretch wrap."},
-        "armchair": {"per_unit": 0.35,
+        "armchair": {"per_unit": 0.25,
                      "materials": ["chair_cover", "moving_blanket", "stretch_wrap"],
                      "method": "Apply chair cover; pad with blanket; stretch wrap."},
-        "recliner": {"per_unit": 0.40,
+        "recliner": {"per_unit": 0.28,
                      "materials": ["chair_cover", "moving_blanket", "stretch_wrap"],
                      "method": "Lock recliner mechanism; chair cover; blanket wrap; stretch wrap."},
-        "mattress": {"per_unit": 0.20,
+        "mattress": {"per_unit": 0.12,
                      "materials": ["mattress_bag"],
                      "method": "Slide into mattress bag; seal with tape."},
-        "lamp": {"per_unit": 0.15,
+        "lamp": {"per_unit": 0.10,
                  "materials": ["lamp_box", "packing_paper"],
                  "method": "Remove shade and bulb; wrap base; place in lamp box."},
-        "rug": {"per_unit": 0.25,
+        "rug": {"per_unit": 0.15,
                 "materials": ["stretch_wrap"],
                 "method": "Roll tightly; secure with stretch wrap."},
-        "mirror": {"per_unit": 0.30,
+        "mirror": {"per_unit": 0.20,
                    "materials": ["mirror_box", "bubble_wrap_12"],
                    "method": "Wrap in bubble wrap; place in mirror box; mark FRAGILE."},
-        "refrigerator": {"per_unit": 0.55,
+        "refrigerator": {"per_unit": 0.35,
                          "materials": ["moving_blanket", "moving_blanket", "stretch_wrap"],
                          "method": "Empty; clean; secure doors with tape; wrap in blankets."},
-        "washer": {"per_unit": 0.40,
+        "washer": {"per_unit": 0.28,
                    "materials": ["moving_blanket", "stretch_wrap"],
                    "method": "Disconnect hoses; secure drum; wrap in blanket."},
-        "dryer": {"per_unit": 0.35,
+        "dryer": {"per_unit": 0.25,
                   "materials": ["moving_blanket", "stretch_wrap"],
                   "method": "Disconnect; wrap in blanket; secure with stretch wrap."},
     }
@@ -2016,24 +2016,23 @@ class EstimateCalculator:
     # run is 30-60 ft; with 2-person carry, doorway navigation, and careful placement
     # the real per-trip time is significantly higher than pure "pick up and walk" time.
     BASE_CARRY_MINS: Dict[str, float] = {
-        "Furniture":    8.0,   # heavy/bulky; dolly setup, 2-person lift, doorway maneuver, careful placement
-        "Appliances":  10.0,   # heaviest items; disconnect check, dolly, 2-person, appliance cart
-        "Electronics":  3.0,   # fragile but lighter; careful carry, padding check
-        "Books":        0.20,  # ~15 books/box × 3 min/box-carry → 0.20 min/book
-        "Fragile":      0.50,  # ~8 items/dish-pack × 4 min/box (slow, careful carry) → 0.50 min/item
-        "Artwork":      5.0,   # mirror/frame; flat carry, 2-person for large, doorway tilt
-        "Kitchenware":  0.30,  # ~8 items/box × 2.5 min/box → 0.30 min/item
-        "Clothing":     0.15,  # ~15 items/wardrobe-box × 2.5 min/box → 0.15 min/item
-        "Collectibles": 0.60,  # ~6 items/box, careful handling × 3.5 min/box → 0.60 min/item
-        "Tools":        0.40,  # ~10 items/toolbox × 4 min/heavy box → 0.40 min/item
-        "Sports":       3.0,   # bulky/awkward (bike, treadmill, bag); ~3-4 min each
-        "Toys":         0.25,  # ~10 items/box × 2.5 min/box → 0.25 min/item
-        "Other":        0.35,  # ~8 items/box × 2.5 min/box → 0.35 min/item
+        "Furniture":    4.0,   # dolly + 2-person lift, doorway maneuver
+        "Appliances":   5.0,   # dolly, 2-person, appliance cart
+        "Electronics":  1.5,   # fragile but lighter; careful carry
+        "Books":        0.12,  # ~15 books/box × 1.8 min/box → 0.12 min/book
+        "Fragile":      0.30,  # ~8 items/dish-pack × 2.5 min/box → 0.30 min/item
+        "Artwork":      2.5,   # mirror/frame; flat carry, doorway tilt
+        "Kitchenware":  0.20,  # ~8 items/box × 1.5 min/box → 0.20 min/item
+        "Clothing":     0.10,  # ~15 items/wardrobe-box × 1.5 min/box → 0.10 min/item
+        "Collectibles": 0.30,  # ~6 items/box, careful handling × 1.8 min/box
+        "Tools":        0.20,  # ~10 items/toolbox × 2 min/box → 0.20 min/item
+        "Sports":       1.5,   # bulky/awkward; ~1.5 min each
+        "Toys":         0.15,  # ~10 items/box × 1.5 min/box → 0.15 min/item
+        "Other":        0.20,  # ~8 items/box × 1.5 min/box → 0.20 min/item
     }
 
-    # Per-job carry overhead: initial path clearing, door propping, dolly/cart staging,
-    # floor protection laying, elevator hold (if applicable), final walkthrough.
-    JOB_CARRY_OVERHEAD_MINS: float = 20.0
+    # Per-job carry overhead: door propping, dolly staging, final walkthrough.
+    JOB_CARRY_OVERHEAD_MINS: float = 10.0
 
     # Packing method → material inference when required_materials is empty
     PACKING_METHOD_MATERIALS = {
@@ -2532,11 +2531,9 @@ class EstimateCalculator:
             item_appliance_ph = 0.0
 
             # AI returns wrapping/boxing time. base_labor_hours already includes
-            # setup/teardown overhead per item. This small overhead accounts for
-            # workspace transitions and minor handling gaps only.
-            # Reduced from 1.25 → 1.10: base_h already covers per-item setup,
-            # and carry time is calculated separately in _calculate_relocation_hours.
-            LABOR_OVERHEAD_MULT = 1.10
+            # setup/teardown overhead per item. Carry time is calculated
+            # separately in _calculate_relocation_hours, so no overhead needed here.
+            LABOR_OVERHEAD_MULT = 1.0
 
             for item in items:
                 labor_h = getattr(item, 'estimated_labor_hours', None)
@@ -2802,9 +2799,9 @@ class EstimateCalculator:
             return round(x * 2) / 2
 
         # Inventory & documentation: 1 person does this, not full crew
-        inventory_hours = rh(total_labor_hours * 0.09) if total_labor_hours > 2 else 0.5
+        inventory_hours = rh(total_labor_hours * 0.05) if total_labor_hours > 2 else 0.5
         # Supervisor: 1 person, not full crew
-        supervisor_hours = rh(total_labor_hours * 0.15) if total_labor_hours > 2 else 0.5
+        supervisor_hours = rh(total_labor_hours * 0.10) if total_labor_hours > 2 else 0.5
 
         # Pack-out elapsed hours — no artificial minimums that inflate small jobs
         po_standard_hrs = max(0.5, rh(po_standard))
@@ -3060,7 +3057,7 @@ class EstimateCalculator:
                  "amount": round(t_rate * trips, 2)},
                 {"name": "Content Carry-Out (floor-weighted)", "qty": carry_person_hours, "unit": "HR",
                  "rate": round(labor_rate, 2),
-                 "detail": carry_floor_note,
+                 "detail": f"{request.crew_size}-person crew  ·  {carry_floor_note}",
                  "amount": round(carry_person_hours * labor_rate, 2)},
                 {"name": "Truck Loading & Securing", "qty": truck_load_person_hours, "unit": "HR",
                  "rate": round(labor_rate, 2),
@@ -3076,7 +3073,7 @@ class EstimateCalculator:
                  "amount": round(t_rate * trips, 2)},
                 {"name": "Content Carry-In (floor-weighted)", "qty": carry_in_person_hours, "unit": "HR",
                  "rate": round(labor_rate, 2),
-                 "detail": carry_in_floor_note,
+                 "detail": f"{request.crew_size}-person crew  ·  {carry_in_floor_note}",
                  "amount": round(carry_in_person_hours * labor_rate, 2)},
                 {"name": "Truck Unloading", "qty": truck_load_person_hours, "unit": "HR",
                  "rate": round(labor_rate, 2),
@@ -3100,7 +3097,7 @@ class EstimateCalculator:
             section_details["On-Site Relocation"] = {"lines": [
                 {"name": "Content Carry to Staging Area (floor-weighted)", "qty": on_site_person_hours, "unit": "HR",
                  "rate": round(labor_rate, 2),
-                 "detail": carry_floor_note,
+                 "detail": f"{request.crew_size}-person crew  ·  {carry_floor_note}",
                  "amount": round(on_site_person_hours * labor_rate, 2)},
             ]}
 

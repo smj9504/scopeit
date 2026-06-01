@@ -298,9 +298,9 @@ PASS2_TOOL = {
                                 "independent of quantity. "
                                 "Includes: preparing workspace, "
                                 "gathering materials, setting up station. "
-                                "Single furniture: 0.05-0.15h. "
-                                "Batch items (books, clothing): 0.15-0.30h. "
-                                "Large appliance: 0.15-0.25h. "
+                                "Single furniture: 0.05-0.10h. "
+                                "Batch items (books, clothing): 0.10-0.15h. "
+                                "Large appliance: 0.10-0.15h. "
                                 "Small single item: 0.02-0.05h."
                             ),
                         },
@@ -313,15 +313,15 @@ PASS2_TOOL = {
                                 "for ONE person. "
                                 "total = base_labor_hours + "
                                 "(per_unit_labor_hours * quantity). "
-                                "Book (batch boxing): 0.01-0.02h/book. "
-                                "Clothing (batch folding): 0.005-0.015h/pc. "
-                                "Dish/glass (wrap each): 0.03-0.05h/pc. "
-                                "Photo frame: 0.04-0.06h/each. "
-                                "Sectional section: 0.5-0.6h/section. "
-                                "Dining chair: 0.2-0.35h/chair. "
-                                "Single sofa (qty=1): 0.7-0.9h. "
-                                "Large wardrobe (qty=1): 1.0-1.8h. "
-                                "Small decor (qty=1): 0.05-0.15h."
+                                "Book (batch boxing): 0.005-0.01h/book. "
+                                "Clothing (batch folding): 0.003-0.008h/pc. "
+                                "Dish/glass (wrap each): 0.02-0.04h/pc. "
+                                "Photo frame: 0.03-0.05h/each. "
+                                "Sectional section: 0.25-0.35h/section. "
+                                "Dining chair: 0.12-0.20h/chair. "
+                                "Single sofa (qty=1): 0.30-0.40h. "
+                                "Large wardrobe (qty=1): 0.45-0.60h. "
+                                "Small decor (qty=1): 0.03-0.08h."
                             ),
                         },
                         "special_instructions": {
@@ -481,21 +481,21 @@ per_unit_labor_hours = marginal time to pack EACH unit.
 
 | Item                     | base  | per_unit | qty | total  |
 |--------------------------|-------|----------|-----|--------|
-| Book collection          | 0.25  | 0.02    | 80  | 1.85h  |
-| Clothing items           | 0.20  | 0.01    | 30  | 0.50h  |
-| Dishes/glassware set     | 0.20  | 0.04    | 15  | 0.80h  |
-| Photo frames             | 0.10  | 0.05    |  5  | 0.35h  |
-| 3-section sectional      | 0.10  | 0.45    |  3  | 1.45h  |
-| Single standard sofa     | 0.10  | 0.50    |  1  | 0.60h  |
-| Dining chairs            | 0.10  | 0.25    |  6  | 1.60h  |
-| Large wardrobe           | 0.15  | 0.75    |  1  | 0.90h  |
-| King bed frame           | 0.15  | 0.60    |  1  | 0.75h  |
-| Small lamp               | 0.02  | 0.10    |  1  | 0.12h  |
-| Large appliance          | 0.20  | 0.45    |  1  | 0.65h  |
-| Fragile glassware set    | 0.20  | 0.05    | 15  | 0.95h  |
-| Treadmill                | 0.15  | 0.50    |  1  | 0.65h  |
-| Dumbbell set             | 0.15  | 0.03    | 20  | 0.75h  |
-| Power rack (disassembly) | 0.20  | 0.80    |  1  | 1.00h  |
+| Book collection          | 0.15  | 0.01    | 80  | 0.95h  |
+| Clothing items           | 0.10  | 0.005   | 30  | 0.25h  |
+| Dishes/glassware set     | 0.15  | 0.03    | 15  | 0.60h  |
+| Photo frames             | 0.08  | 0.04    |  5  | 0.28h  |
+| 3-section sectional      | 0.08  | 0.30    |  3  | 0.98h  |
+| Single standard sofa     | 0.08  | 0.35    |  1  | 0.43h  |
+| Dining chairs            | 0.08  | 0.15    |  6  | 0.98h  |
+| Large wardrobe           | 0.10  | 0.50    |  1  | 0.60h  |
+| King bed frame           | 0.10  | 0.40    |  1  | 0.50h  |
+| Small lamp               | 0.02  | 0.08    |  1  | 0.10h  |
+| Large appliance          | 0.15  | 0.30    |  1  | 0.45h  |
+| Fragile glassware set    | 0.15  | 0.04    | 15  | 0.75h  |
+| Treadmill                | 0.10  | 0.35    |  1  | 0.45h  |
+| Dumbbell set             | 0.10  | 0.02    | 20  | 0.50h  |
+| Power rack (disassembly) | 0.15  | 0.55    |  1  | 0.70h  |
 
 KEY: BATCH items (books, clothing, small kitchenware) → LOW per_unit, HIGHER base.
      INDIVIDUAL items (furniture, each wrapped separately) → LOW base, HIGHER per_unit.

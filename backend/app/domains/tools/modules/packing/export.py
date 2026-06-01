@@ -237,13 +237,13 @@ def get_line_items_from_estimate(
     packout_items = []
 
     # Calculate hour allocations (kept for internal ratio)
-    std_hours = max(4, round(pack_out_hours * 0.6))
-    fragile_hours = max(2, round(pack_out_hours * 0.15))
+    std_hours = max(2, round(pack_out_hours * 0.6))
+    fragile_hours = max(1, round(pack_out_hours * 0.15))
     specialty_hours = max(1, round(pack_out_hours * 0.08))
-    furniture_hours = max(2, round(pack_out_hours * 0.1))
-    appliance_hours = max(2, round(pack_out_hours * 0.08))
-    inventory_hours = max(2, round(total_hours * 0.06))
-    supervisor_hours = max(4, round(total_hours * 0.12))
+    furniture_hours = max(1, round(pack_out_hours * 0.1))
+    appliance_hours = max(1, round(pack_out_hours * 0.08))
+    inventory_hours = max(1, round(total_hours * 0.05))
+    supervisor_hours = max(1, round(total_hours * 0.10))
 
     # 1. Pack-Out Crew Labor (standard + furniture + appliance + inventory)
     crew_hours = std_hours + furniture_hours + appliance_hours + inventory_hours
@@ -502,11 +502,11 @@ def get_line_items_from_estimate(
         packback_items = []
 
         # Calculate pack-back hour allocations
-        pb_crew_base = max(8, round(pack_back_hours * 0.65))
-        pb_reassembly = max(2, round(pack_back_hours * 0.12))
+        pb_crew_base = max(2, round(pack_back_hours * 0.65))
+        pb_reassembly = max(1, round(pack_back_hours * 0.12))
         pb_appliance = max(1, round(pack_back_hours * 0.06))
         pb_waste = max(1, round(pack_back_hours * 0.06))
-        pb_supervisor = max(2, round(pack_back_hours * 0.12))
+        pb_supervisor = max(1, round(pack_back_hours * 0.10))
 
         # 1. Pack-Back Crew Labor (crew + reassembly + appliance + waste)
         pb_total_crew = pb_crew_base + pb_reassembly + pb_appliance + pb_waste
@@ -2124,7 +2124,6 @@ def generate_report_pdf(
         # Aggregate stats across all rooms
         total_line_items = 0
         total_qty = 0
-        total_labor = 0.0
         cat_counts: Dict[str, int] = {}
         fragile_total = 0
         hv_total = 0
@@ -2134,7 +2133,6 @@ def generate_report_pdf(
         for room in rooms_data:
             items = room.get("items") or []
             total_line_items += len(items)
-            total_labor += room.get("labor_hours") or 0
             for item in items:
                 qty = item.get("quantity", 1) or 1
                 total_qty += qty
@@ -2159,12 +2157,11 @@ def generate_report_pdf(
 
         # Top-level stats
         summary_rows = [
-            ["Total Rooms", "Line Items", "Total Pieces", "Est. Labor", "Fragile", "High-Value", "Heavy"],
+            ["Total Rooms", "Line Items", "Total Pieces", "Fragile", "High-Value", "Heavy"],
             [
                 str(len(rooms_data)),
                 str(total_line_items),
                 str(total_qty),
-                f"{total_labor:.1f} hrs",
                 str(fragile_total),
                 str(hv_total),
                 str(heavy_total),
@@ -2172,7 +2169,7 @@ def generate_report_pdf(
         ]
         sum_table = Table(
             summary_rows,
-            colWidths=[1.0 * inch] * 7,
+            colWidths=[1.17 * inch] * 6,
             hAlign="LEFT",
         )
         sum_table.setStyle(TableStyle([
