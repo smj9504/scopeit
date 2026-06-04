@@ -1214,14 +1214,14 @@ def _prepare_estimate_pdf_data(estimate: Estimate, company: Company, db: Session
 
     # Build customer info dict - use snapshot fields as fallback when customer relationship is None
     customer_info = {
-        "name": customer.name if customer else (estimate.customer_name or ""),
-        "address": customer.address_line1 if customer else (estimate.customer_address or ""),
-        "address_line2": customer.address_line2 if customer else "",
-        "city": customer.city if customer else "",
-        "state": customer.state if customer else "",
-        "zipcode": customer.zipcode if customer else "",
-        "phone": customer.phone if customer else "",
-        "email": customer.email if customer else (estimate.customer_email or ""),
+        "name": (customer.name if customer else (estimate.customer_name or "")) or "",
+        "address": (customer.address_line1 if customer else (estimate.customer_address or "")) or "",
+        "address_line2": (customer.address_line2 if customer else "") or "",
+        "city": (customer.city if customer else "") or "",
+        "state": (customer.state if customer else "") or "",
+        "zipcode": (customer.zipcode if customer else "") or "",
+        "phone": (customer.phone if customer else "") or "",
+        "email": (customer.email if customer else (estimate.customer_email or "")) or "",
     }
 
     # Build sections with items
@@ -1348,11 +1348,17 @@ async def get_pdf(
     # Generate PDF
     pdf_bytes = generate_estimate_pdf(pdf_data, template_name)
 
-    # Build filename
+    # Build filename with address
     customer_name = estimate.customer.name if estimate.customer else (estimate.customer_name or "Customer")
-    filename = f"{customer_name} - Estimate {estimate.estimate_number}.pdf"
+    customer_addr = ""
+    if estimate.customer:
+        addr_parts = [estimate.customer.address_line1, estimate.customer.city, estimate.customer.state]
+        customer_addr = " ".join(p for p in addr_parts if p)
+    elif estimate.customer_address:
+        customer_addr = estimate.customer_address
+    filename = f"{customer_name} - {customer_addr} - Estimate {estimate.estimate_number}.pdf" if customer_addr else f"{customer_name} - Estimate {estimate.estimate_number}.pdf"
     # Clean filename
-    filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.')).strip()
+    filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.', ',')).strip()
 
     return Response(
         content=pdf_bytes.read(),

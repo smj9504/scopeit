@@ -43,6 +43,7 @@ import {
   UNIT_HINTS,
   QTY_CHIPS,
   HINT_VOLUME_LEVELS,
+  PRESET_CATEGORY_HINTS,
 } from './constants';
 import { SharedDetailsStep } from './SharedDetailsStep';
 import { RoomSpecialItems } from './RoomSpecialItems';
@@ -630,7 +631,16 @@ const StepRooms: React.FC<{
                         ),
                         children: (
                           <div style={{ paddingTop: 6 }}>
-                            {Object.entries(HINT_CATEGORIES).map(([cat, items]) => (
+                            {Object.entries((() => {
+                              const presetCategory = findPreset(room.preset)?.category;
+                              const allowed = presetCategory ? PRESET_CATEGORY_HINTS[presetCategory] : undefined;
+                              if (!allowed) return HINT_CATEGORIES;
+                              return Object.fromEntries(
+                                Object.entries(HINT_CATEGORIES)
+                                  .map(([cat, catItems]) => [cat, catItems.filter((h) => allowed.includes(h.key))])
+                                  .filter(([, catItems]) => (catItems as typeof catItems).length > 0)
+                              );
+                            })()).map(([cat, items]) => (
                               <div key={cat} style={{ marginBottom: 12 }}>
                                 <div
                                   style={{

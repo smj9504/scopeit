@@ -165,6 +165,65 @@ export const HINT_VOLUME_LEVELS: Record<string, VolumeLevelOption[]> = {
   chemicals:        [{ key:'S', label:'Few products',     hint:'~1 box',    mult:0.4 }, { key:'M', label:'Standard supply',    hint:'~2 boxes',  mult:1.0 }, { key:'L', label:'Large supply',       hint:'~4 boxes',  mult:1.8 }, { key:'XL', label:'Storage room',     hint:'~8 boxes',  mult:3.0 }],
 };
 
+// Allowed content hint keys per room preset category.
+// Only these hints will be shown in the Content Hints section for that room type.
+export const PRESET_CATEGORY_HINTS: Record<string, string[]> = {
+  Bedroom: [
+    'clothing_hanging', 'clothing_folded', 'bedding',
+    'books',
+    'electronics',
+    'fragile', 'artwork', 'collectibles', 'valuables',
+    'furniture', 'rugs', 'lamps_lighting',
+    'baby_items', 'instruments',
+  ],
+  Kitchen: [
+    'kitchenware',
+    'fragile', 'collectibles',
+    'appliances_small', 'appliances_large',
+  ],
+  Living: [
+    'electronics',
+    'fragile', 'artwork', 'collectibles', 'valuables', 'wine_collection',
+    'furniture', 'rugs', 'lamps_lighting',
+    'books', 'instruments',
+  ],
+  Office: [
+    'books', 'documents',
+    'electronics',
+    'artwork', 'collectibles', 'fragile',
+    'furniture',
+  ],
+  Storage: [
+    'boxes_stored', 'holiday_decor',
+    'tools', 'equipment_heavy',
+    'sports', 'bicycles',
+    'appliances_small', 'appliances_large',
+    'electronics', 'furniture',
+    'fragile', 'artwork', 'collectibles',
+    'chemicals',
+  ],
+  Small: [
+    'clothing_hanging', 'clothing_folded', 'bedding',
+    'appliances_large',
+    'fragile',
+    'furniture', 'artwork',
+    'chemicals',
+  ],
+  Specialty: [
+    'instruments',
+    'equipment_heavy',
+    'electronics',
+    'sports',
+    'furniture',
+  ],
+  Outdoor: [
+    'outdoor_furniture', 'plants', 'chemicals',
+    'tools', 'equipment_heavy',
+    'sports', 'bicycles',
+    'boxes_stored',
+  ],
+};
+
 // Wizard steps
 export const WIZARD_STEPS = [
   { title: 'Details', description: 'Client & settings' },

@@ -1162,14 +1162,14 @@ def _prepare_invoice_pdf_data(invoice: Invoice, company: Company, db: Session) -
 
     # Build customer info dict - use snapshot fields as fallback when customer relationship is None
     customer_info = {
-        "name": customer.name if customer else (invoice.customer_name or ""),
-        "address": customer.address_line1 if customer else (invoice.customer_address or ""),
-        "address_line2": customer.address_line2 if customer else "",
-        "city": customer.city if customer else "",
-        "state": customer.state if customer else "",
-        "zipcode": customer.zipcode if customer else "",
-        "phone": customer.phone if customer else "",
-        "email": customer.email if customer else (invoice.customer_email or ""),
+        "name": (customer.name if customer else (invoice.customer_name or "")) or "",
+        "address": (customer.address_line1 if customer else (invoice.customer_address or "")) or "",
+        "address_line2": (customer.address_line2 if customer else "") or "",
+        "city": (customer.city if customer else "") or "",
+        "state": (customer.state if customer else "") or "",
+        "zipcode": (customer.zipcode if customer else "") or "",
+        "phone": (customer.phone if customer else "") or "",
+        "email": (customer.email if customer else (invoice.customer_email or "")) or "",
     }
 
     # Build sections with items
@@ -1310,14 +1310,20 @@ async def get_invoice_pdf(
     # Generate PDF
     pdf_bytes = generate_invoice_pdf(pdf_data, template_name)
 
-    # Build filename
+    # Build filename with address
     customer_name = invoice.customer.name if invoice.customer else (invoice.customer_name or "Customer")
-    filename = f"{customer_name} - Invoice {invoice.invoice_number}"
+    customer_addr = ""
+    if invoice.customer:
+        addr_parts = [invoice.customer.address_line1, invoice.customer.city, invoice.customer.state]
+        customer_addr = " ".join(p for p in addr_parts if p)
+    elif invoice.customer_address:
+        customer_addr = invoice.customer_address
+    filename = f"{customer_name} - {customer_addr} - Invoice {invoice.invoice_number}" if customer_addr else f"{customer_name} - Invoice {invoice.invoice_number}"
     if invoice.balance_due and float(invoice.balance_due) <= 0.01:
         filename += " PAID"
     filename += ".pdf"
     # Clean filename
-    filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.')).strip()
+    filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.', ',')).strip()
 
     return Response(
         content=pdf_bytes.read(),
@@ -1359,14 +1365,14 @@ def _prepare_receipt_pdf_data(
 
     # Build customer info dict
     customer_info = {
-        "name": customer.name if customer else (invoice.customer_name or ""),
-        "address": customer.address_line1 if customer else (invoice.customer_address or ""),
-        "address_line2": customer.address_line2 if customer else "",
-        "city": customer.city if customer else "",
-        "state": customer.state if customer else "",
-        "zipcode": customer.zipcode if customer else "",
-        "phone": customer.phone if customer else "",
-        "email": customer.email if customer else (invoice.customer_email or ""),
+        "name": (customer.name if customer else (invoice.customer_name or "")) or "",
+        "address": (customer.address_line1 if customer else (invoice.customer_address or "")) or "",
+        "address_line2": (customer.address_line2 if customer else "") or "",
+        "city": (customer.city if customer else "") or "",
+        "state": (customer.state if customer else "") or "",
+        "zipcode": (customer.zipcode if customer else "") or "",
+        "phone": (customer.phone if customer else "") or "",
+        "email": (customer.email if customer else (invoice.customer_email or "")) or "",
     }
 
     # Calculate financial details

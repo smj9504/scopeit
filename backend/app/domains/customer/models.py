@@ -53,9 +53,15 @@ class Customer(Base):
     @property
     def full_address(self) -> str:
         """Get formatted full address"""
-        parts = [self.address_line1]
+        parts = [self.address_line1 or ""]
         if self.address_line2:
             parts.append(self.address_line2)
-        if self.city and self.state and self.zipcode:
-            parts.append(f"{self.city}, {self.state} {self.zipcode}")
-        return ", ".join(filter(None, parts))
+        if self.city or self.state or self.zipcode:
+            city_state_zip = []
+            if self.city:
+                city_state_zip.append(self.city)
+            state_zip = " ".join(filter(None, [self.state, self.zipcode]))
+            if state_zip:
+                city_state_zip.append(state_zip)
+            parts.append(", ".join(city_state_zip))
+        return ", ".join(p for p in parts if p)
