@@ -1789,6 +1789,7 @@ def generate_report_pdf(
     tax_rate: float = 0,
     notes: Optional[str] = None,
     include_signature_page: bool = False,
+    include_field_notes: bool = False,
     image_quality: int = 60,
     max_image_width: int = 800,
 ) -> bytes:
@@ -1892,16 +1893,22 @@ def generate_report_pdf(
     if co_email:
         co_lines.append(co_email)
 
+    include_packback = estimate_data.get("include_packback", False)
+    report_title = (
+        "Content Pack-Out / Pack-Back Report" if include_packback
+        else "Content Pack-Out Report"
+    )
+
     header_left = Paragraph("<br/>".join(co_lines), style_normal)
     header_right = Paragraph(
-        f'<font size="16"><b>Packing Report</b></font><br/><br/>'
+        f'<font size="12"><b>{report_title}</b></font><br/><br/>'
         f'<font size="9">Report #: {report_number}<br/>'
         f"Date: {report_date}</font>",
         style_right,
     )
     header_table = Table(
         [[header_left, header_right]],
-        colWidths=[4 * inch, 3.5 * inch],
+        colWidths=[2.8 * inch, 4.7 * inch],
         hAlign="LEFT",
     )
     header_table.setStyle(TableStyle([
@@ -1952,18 +1959,16 @@ def generate_report_pdf(
             story.append(Spacer(1, 4))
 
         summary_data = [
-            ["Rooms", "Hours", "Crew", "Subtotal", "Grand Total"],
+            ["Rooms", "Subtotal", "Grand Total"],
             [
                 str(total_rooms),
-                str(round(total_hours, 1)),
-                str(crew_size),
                 f"${subtotal:,.2f}",
                 f"${grand_total:,.2f}",
             ],
         ]
         summary_table = Table(
             summary_data,
-            colWidths=[1.1 * inch] * 5,
+            colWidths=[1.5 * inch, 2.0 * inch, 2.0 * inch],
             hAlign="LEFT",
         )
         summary_table.setStyle(TableStyle([
@@ -2041,15 +2046,11 @@ def generate_report_pdf(
                 ]))
                 story.append(Spacer(1, 8))
 
-            # -- Labor Log --
-            # Always show labor info when items exist (even if labor_log toggle is off),
-            # as a compact summary line under the inventory. Full labor table only
-            # when labor_log is explicitly enabled.
-            labor_hours = room.get("labor_hours") or 0
-            labor_notes = room.get("labor_notes") or ""
-            if items and (labor_hours > 0 or labor_notes):
-                if show_labor:
-                    # Full labor table
+            # -- Labor Log (only when toggle is on) --
+            if show_labor:
+                labor_hours = room.get("labor_hours") or 0
+                labor_notes = room.get("labor_notes") or ""
+                if items and (labor_hours > 0 or labor_notes):
                     labor_data = [
                         ["Labor Hours", "Notes"],
                         [
@@ -2077,13 +2078,6 @@ def generate_report_pdf(
                         labor_table,
                     ]))
                     story.append(Spacer(1, 8))
-                else:
-                    # Compact summary line (always shown when items exist)
-                    summary_text = f"Labor: {labor_hours:.1f} hrs"
-                    if labor_notes:
-                        summary_text += f" — {labor_notes}"
-                    story.append(Paragraph(summary_text, style_small))
-                    story.append(Spacer(1, 4))
 
             # -- Room Photos & Damage Photos --
             photos = room.get("photos") or []
@@ -2110,14 +2104,15 @@ def generate_report_pdf(
                 )
                 story.append(Spacer(1, 8))
 
-            # Field notes (regenerated from current items at report time)
-            field_notes = room.get("field_notes") or []
-            if field_notes:
-                notes_text = " | ".join(field_notes)
-                story.append(Paragraph(
-                    f"<i>Notes: {notes_text}</i>", style_small,
-                ))
-                story.append(Spacer(1, 6))
+            # Field notes (only when user opted in)
+            if include_field_notes:
+                field_notes = room.get("field_notes") or []
+                if field_notes:
+                    notes_text = " | ".join(field_notes)
+                    story.append(Paragraph(
+                        f"<i>Notes: {notes_text}</i>", style_small,
+                    ))
+                    story.append(Spacer(1, 6))
 
     # ========== INVENTORY SUMMARY ==========
     if rooms_data and show_inventory:

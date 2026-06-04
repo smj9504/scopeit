@@ -171,15 +171,27 @@ PASS1_TOOL = {
                         },
                         "is_high_value": {
                             "type": "boolean",
-                            "description": "True if replacement value > $500",
+                            "description": (
+                                "True ONLY if replacement value > $1000. "
+                                "Standard appliances (stove, fridge, washer) are NOT high-value. "
+                                "Examples of high-value: antiques, fine art, grand piano, "
+                                "high-end electronics ($1000+), jewelry, collectible items."
+                            ),
                         },
                         "estimated_value": {
                             "type": ["string", "null"],
-                            "description": "Dollar range string if high-value, else null. E.g. '$800 - $1200'",
+                            "description": "Dollar range string if high-value, else null. E.g. '$1500 - $2000'",
                         },
                         "is_fragile": {
                             "type": "boolean",
-                            "description": "True if breakable or requires delicate handling",
+                            "description": (
+                                "True ONLY for items made of glass, ceramic, porcelain, crystal, "
+                                "or containing screens/tubes that can crack. "
+                                "NOT fragile: photo frames, clocks, small figurines, potted plants, "
+                                "lamps, certificates, plaques, plastic items. "
+                                "Fragile examples: TV/monitor, wine glasses, china dishes, mirrors, "
+                                "chandeliers, aquariums, marble/stone sculptures."
+                            ),
                         },
                         "confidence": {
                             "type": "number",

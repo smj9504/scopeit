@@ -1639,7 +1639,7 @@ class EstimateCalculator:
         "Artwork":      ("M", "light"),      # frames, canvases
         "Collectibles": ("S", "light"),      # small items
         "Tools":        ("S", "medium"),     # hand tools
-        "Sports":       ("L", "heavy"),      # gym equipment, bikes
+        "Sports":       ("M", "medium"),     # varies widely; overrides handle heavy items
         "Other":        ("M", "medium"),     # catch-all
     }
 
@@ -1748,7 +1748,12 @@ class EstimateCalculator:
         ("projector",   "M", "medium"),
         ("game",        "S", "medium"),  # game console
 
-        # ── Sports: smaller items (default is L/heavy) ──
+        # ── Sports: gym equipment (heavy) ──
+        ("elliptical",  "L", "extra_heavy"),
+        ("rowing",      "L", "heavy"),       # rowing machine
+        ("stair climb", "L", "heavy"),
+        ("exercise bike", "L", "heavy"),
+        ("stationary bike", "L", "heavy"),
         ("dumbbell",    "S", "heavy"),
         ("kettlebell",  "S", "heavy"),
         ("weight plate", "S", "heavy"),
@@ -1939,44 +1944,52 @@ class EstimateCalculator:
 
     @staticmethod
     def generate_field_notes(items: List[Any]) -> List[str]:
-        """Generate field notes from the current item list.
+        """Generate field notes for items needing special handling.
 
-        Called at calculate/report time so notes always reflect user edits.
+        Only creates notes for genuinely special situations — not for every
+        item with a fragile/HV flag (those are already shown in inventory).
         """
+        # Keywords that indicate truly fragile material (glass/ceramic/screen)
+        BREAKABLE_KEYWORDS = {
+            "mirror", "chandelier", "crystal", "porcelain", "china",
+            "aquarium", "stained glass", "marble", "sculpture",
+        }
+        # Keywords that trigger "keep upright" — only actual screens
+        UPRIGHT_KEYWORDS = {"tv", "television", "flat screen"}
+
         notes: List[str] = []
         for item in items:
             name = getattr(item, 'name', '') or 'Unknown'
-            flags: list = []
-
-            if getattr(item, 'needs_disassembly', False):
-                flags.append("Disassembly required")
-            if getattr(item, 'is_high_value', False):
-                flags.append("HIGH VALUE — photograph & document condition before packing")
-            if getattr(item, 'is_fragile', False) and not getattr(item, 'is_high_value', False):
-                flags.append("FRAGILE — handle with extra care")
-
-            # Weight / handling hints based on category + name
             cat = getattr(item, 'category', '')
             name_lower = name.lower()
-            if cat == "Appliances" or any(k in name_lower for k in ("refrigerator", "washer", "dryer", "piano")):
-                flags.append("Heavy — 2-person lift recommended")
-            elif cat == "Furniture" and any(k in name_lower for k in (
-                "wardrobe", "armoire", "hutch", "china cabinet", "entertainment",
-                "sectional", "bed frame", "dresser",
-            )):
-                flags.append("Heavy — 2-person lift recommended")
+            flags: list = []
 
-            if any(k in name_lower for k in ("tv", "monitor", "screen")):
+            # 1. Disassembly — actionable for crew
+            if getattr(item, 'needs_disassembly', False):
+                flags.append("Disassembly required")
+
+            # 2. High value — document condition (skip standard appliances)
+            if getattr(item, 'is_high_value', False) and cat != "Appliances":
+                flags.append("Document condition before packing")
+
+            # 3. Heavy — 2-person lift (based on actual weight attribute)
+            item_weight = getattr(item, 'weight', '') or ''
+            if item_weight in ("heavy", "extra_heavy"):
+                flags.append("2-person lift")
+
+            # 4. Specific handling (actionable instructions, not generic warnings)
+            if any(k in name_lower for k in UPRIGHT_KEYWORDS):
                 flags.append("Keep upright during transport")
+            elif any(k in name_lower for k in BREAKABLE_KEYWORDS):
+                flags.append("Custom padding / crating recommended")
+
             if any(k in name_lower for k in ("plant", "potted")):
-                flags.append("Check moisture before packing; do not seal box completely")
-            if any(k in name_lower for k in ("mirror", "glass", "chandelier")):
-                flags.append("Extremely fragile — custom padding recommended")
+                flags.append("Needs ventilation — do not seal")
 
             if flags:
-                notes.append(f"{name}: {'. '.join(flags)}.")
+                notes.append(f"{name}: {'. '.join(flags)}")
 
-        return notes[:15]  # cap at 15 notes
+        return notes[:8]
 
     # ---- Content Relocation (carry packed items from room to truck / staging area) ----
     # Multiplier applied to base carry time by floor.
@@ -2991,59 +3004,60 @@ class EstimateCalculator:
             """Convert elapsed hours × crew to total person-hours, rounded to 0.5."""
             return rh(elapsed * c)
 
+        # Line items show ELAPSED hours (wall-clock time on site).
+        # Rate = per-person rate × crew size, so amount = elapsed × crew_rate.
+        crew_labor_rate = round(labor_rate * crew, 2)
+        crew_fragile_rate = round(fragile_rate * crew, 2)
+        crew_specialty_rate = round(specialty_rate * crew, 2)
+
         po_lines = []
         if po_standard_hrs > 0:
-            ph = person_hrs(po_standard_hrs, crew)
             po_lines.append({
-                "name": "Standard Pack-Out", "qty": ph, "unit": "HR",
-                "rate": round(labor_rate, 2),
-                "detail": f"{po_standard_hrs} elapsed hr · {crew}-person crew  (wrap, box, label, stage)",
-                "amount": round(ph * labor_rate, 2),
+                "name": "Standard Pack-Out", "qty": po_standard_hrs, "unit": "HR",
+                "rate": crew_labor_rate,
+                "detail": f"{crew}-person crew (wrap, box, label, stage)",
+                "amount": round(po_standard_hrs * crew_labor_rate, 2),
             })
         if po_fragile_hrs > 0:
-            ph = person_hrs(po_fragile_hrs, crew)
             po_lines.append({
-                "name": "Fragile / High-Care Items", "qty": ph, "unit": "HR",
-                "rate": round(fragile_rate, 2),
-                "detail": f"{po_fragile_hrs} elapsed hr · {crew}-person crew  (individual wrap, double-box, condition photo)",
-                "amount": round(ph * fragile_rate, 2),
+                "name": "Fragile / High-Care Items", "qty": po_fragile_hrs, "unit": "HR",
+                "rate": crew_fragile_rate,
+                "detail": f"{crew}-person crew (individual wrap, double-box, condition photo)",
+                "amount": round(po_fragile_hrs * crew_fragile_rate, 2),
             })
         if po_specialty_hrs > 0:
-            ph = person_hrs(po_specialty_hrs, crew)
             po_lines.append({
-                "name": "Specialty / High-Value Items", "qty": ph, "unit": "HR",
-                "rate": round(specialty_rate, 2),
-                "detail": f"{po_specialty_hrs} elapsed hr · {crew}-person crew  (serial# record, custom pack, high-value documentation)",
-                "amount": round(ph * specialty_rate, 2),
+                "name": "Specialty / High-Value Items", "qty": po_specialty_hrs, "unit": "HR",
+                "rate": crew_specialty_rate,
+                "detail": f"{crew}-person crew (serial# record, custom pack, high-value documentation)",
+                "amount": round(po_specialty_hrs * crew_specialty_rate, 2),
             })
         if po_furniture_hrs > 0:
-            ph = person_hrs(po_furniture_hrs, crew)
             po_lines.append({
-                "name": "Furniture Disassembly", "qty": ph, "unit": "HR",
-                "rate": round(labor_rate, 2),
-                "detail": f"{po_furniture_hrs} elapsed hr · {crew}-person crew  (disassemble, blanket-wrap, shrink-wrap)",
-                "amount": round(ph * labor_rate, 2),
+                "name": "Furniture Disassembly", "qty": po_furniture_hrs, "unit": "HR",
+                "rate": crew_labor_rate,
+                "detail": f"{crew}-person crew (disassemble, blanket-wrap, shrink-wrap)",
+                "amount": round(po_furniture_hrs * crew_labor_rate, 2),
             })
         if po_appliance_hrs > 0:
-            ph = person_hrs(po_appliance_hrs, crew)
             po_lines.append({
-                "name": "Appliance Handling", "qty": ph, "unit": "HR",
-                "rate": round(labor_rate, 2),
-                "detail": f"{po_appliance_hrs} elapsed hr · {crew}-person crew  (disconnect, secure internals, dolly)",
-                "amount": round(ph * labor_rate, 2),
+                "name": "Appliance Handling", "qty": po_appliance_hrs, "unit": "HR",
+                "rate": crew_labor_rate,
+                "detail": f"{crew}-person crew (disconnect, secure internals, dolly)",
+                "amount": round(po_appliance_hrs * crew_labor_rate, 2),
             })
         if inventory_hours > 0:
             po_lines.append({
                 "name": "Inventory & Documentation", "qty": float(inventory_hours), "unit": "HR",
                 "rate": round(labor_rate, 2),
-                "detail": f"{inventory_hours} hr · 1 person  (photo log, written inventory per item)",
+                "detail": "1 person (photo log, written inventory per item)",
                 "amount": round(inventory_hours * labor_rate, 2),
             })
         if supervisor_hours > 0:
             po_lines.append({
                 "name": "Supervision", "qty": float(supervisor_hours), "unit": "HR",
                 "rate": round(fragile_rate, 2),
-                "detail": f"{supervisor_hours} hr · 1 supervisor  (quality control, crew coordination)",
+                "detail": "1 supervisor (quality control, crew coordination)",
                 "amount": round(supervisor_hours * fragile_rate, 2),
             })
         if po_lines:
@@ -3104,60 +3118,55 @@ class EstimateCalculator:
         if request.include_packback:
             pb_lines = []
             if pb_standard_hrs > 0:
-                ph = person_hrs(pb_standard_hrs, crew)
                 pb_lines.append({
-                    "name": "Standard Pack-Back", "qty": ph, "unit": "HR",
-                    "rate": round(labor_rate, 2),
-                    "detail": f"{pb_standard_hrs} elapsed hr · {crew}-person crew  (unpack, place, remove packing material)",
-                    "amount": round(ph * labor_rate, 2),
+                    "name": "Standard Pack-Back", "qty": pb_standard_hrs, "unit": "HR",
+                    "rate": crew_labor_rate,
+                    "detail": f"{crew}-person crew (unpack, place, remove packing material)",
+                    "amount": round(pb_standard_hrs * crew_labor_rate, 2),
                 })
             if pb_fragile_hrs > 0:
-                ph = person_hrs(pb_fragile_hrs, crew)
                 pb_lines.append({
-                    "name": "Fragile / High-Care Unpacking", "qty": ph, "unit": "HR",
-                    "rate": round(fragile_rate, 2),
-                    "detail": f"{pb_fragile_hrs} elapsed hr · {crew}-person crew  (careful unwrap, condition check, placement)",
-                    "amount": round(ph * fragile_rate, 2),
+                    "name": "Fragile / High-Care Unpacking", "qty": pb_fragile_hrs, "unit": "HR",
+                    "rate": crew_fragile_rate,
+                    "detail": f"{crew}-person crew (careful unwrap, condition check, placement)",
+                    "amount": round(pb_fragile_hrs * crew_fragile_rate, 2),
                 })
             if pb_specialty_hrs > 0:
-                ph = person_hrs(pb_specialty_hrs, crew)
                 pb_lines.append({
-                    "name": "Specialty / High-Value Unpacking", "qty": ph, "unit": "HR",
-                    "rate": round(specialty_rate, 2),
-                    "detail": f"{pb_specialty_hrs} elapsed hr · {crew}-person crew  (unwrap, verify serial#, place per owner instruction)",
-                    "amount": round(ph * specialty_rate, 2),
+                    "name": "Specialty / High-Value Unpacking", "qty": pb_specialty_hrs, "unit": "HR",
+                    "rate": crew_specialty_rate,
+                    "detail": f"{crew}-person crew (unwrap, verify serial#, place per owner instruction)",
+                    "amount": round(pb_specialty_hrs * crew_specialty_rate, 2),
                 })
             if pb_appliance_hrs > 0:
-                ph = person_hrs(pb_appliance_hrs, crew)
                 pb_lines.append({
-                    "name": "Appliance Reconnection", "qty": ph, "unit": "HR",
-                    "rate": round(labor_rate, 2),
-                    "detail": f"{pb_appliance_hrs} elapsed hr · {crew}-person crew  (reconnect utilities, test operation)",
-                    "amount": round(ph * labor_rate, 2),
+                    "name": "Appliance Reconnection", "qty": pb_appliance_hrs, "unit": "HR",
+                    "rate": crew_labor_rate,
+                    "detail": f"{crew}-person crew (reconnect utilities, test operation)",
+                    "amount": round(pb_appliance_hrs * crew_labor_rate, 2),
                 })
             if pb_inventory > 0:
                 pb_lines.append({
                     "name": "Inventory Verification", "qty": float(pb_inventory), "unit": "HR",
                     "rate": round(labor_rate, 2),
-                    "detail": f"{pb_inventory} hr · 1 person  (check items against pack-out inventory, note discrepancies)",
+                    "detail": "1 person (check items against pack-out inventory, note discrepancies)",
                     "amount": round(pb_inventory * labor_rate, 2),
                 })
             if pb_supervisor > 0:
                 pb_lines.append({
                     "name": "Supervision", "qty": float(pb_supervisor), "unit": "HR",
                     "rate": round(fragile_rate, 2),
-                    "detail": f"{pb_supervisor} hr · 1 supervisor  (placement verification, damage check)",
+                    "detail": "1 supervisor (placement verification, damage check)",
                     "amount": round(pb_supervisor * fragile_rate, 2),
                 })
             if pb_lines:
                 section_details["Pack-Back Labor"] = {"lines": pb_lines}
             if furniture_assembly_cost > 0:
-                ph = person_hrs(pb_furniture_hrs, crew)
                 section_details["Furniture Assembly"] = {"lines": [
-                    {"name": "Furniture Reassembly", "qty": ph, "unit": "HR",
-                     "rate": round(labor_rate, 2),
-                     "detail": f"{pb_furniture_hrs} elapsed hr · {crew}-person crew  (reassemble disassembled pieces)",
-                     "amount": round(ph * labor_rate, 2)},
+                    {"name": "Furniture Reassembly", "qty": pb_furniture_hrs, "unit": "HR",
+                     "rate": crew_labor_rate,
+                     "detail": f"{crew}-person crew (reassemble disassembled pieces)",
+                     "amount": round(pb_furniture_hrs * crew_labor_rate, 2)},
                 ]}
 
         # Debris Hauling section_details — show exactly what drove the charge

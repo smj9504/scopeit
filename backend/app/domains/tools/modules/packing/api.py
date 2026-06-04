@@ -581,16 +581,36 @@ async def export_report(
                 for p in existing_photos
             )
             if not has_real_photos:
-                # Find matching session room for photo_keys
                 room_name = rd.get("room_name", "")
+                # Try exact match first, then normalized match (ignore case/whitespace)
                 matching = next(
                     (pr for pr in session_photo_rooms if pr.get("room_name") == room_name),
                     None,
                 )
+                if not matching:
+                    norm = room_name.strip().lower()
+                    matching = next(
+                        (pr for pr in session_photo_rooms
+                         if (pr.get("room_name") or "").strip().lower() == norm),
+                        None,
+                    )
+                # Also try positional fallback if name matching fails
+                if not matching and i < len(session_photo_rooms):
+                    matching = session_photo_rooms[i]
                 if matching:
                     keys = matching.get("photo_keys", [])
                     if keys:
                         rd["photos"] = _load_photos_from_keys(keys, room_name)
+                    elif matching.get("photos"):
+                        # Fallback: inline base64 photos from session
+                        raw = matching["photos"]
+                        rd["photos"] = [
+                            {"image": p if p.startswith("data:") else f"data:image/jpeg;base64,{p}",
+                             "caption": f"{room_name} - Photo {idx + 1}",
+                             "is_damage": False}
+                            for idx, p in enumerate(raw)
+                            if isinstance(p, str) and len(p) > 100
+                        ]
             # Compute per-room labor if not already provided
             if rd.get("labor_hours") is None:
                 room_labor, room_labor_notes = _compute_room_labor(
@@ -688,14 +708,16 @@ async def export_report(
         tax_rate=request.tax_rate,
         notes=request.notes,
         include_signature_page=request.include_signature_page,
+        include_field_notes=request.include_field_notes,
         image_quality=request.image_quality,
         max_image_width=request.max_image_width,
     )
 
-    # Filename: Pack Out Report - 123 Main St, Dallas - RPT-ab12cd34.pdf
     addr_slug = _build_address_slug(property_address)
     sid = request.session_id[:8]
-    fname_parts = ["Pack Out Report"]
+    include_pb = (session_data.get("result") or session_data).get("include_packback", False)
+    report_label = "Content Pack-Out Pack-Back Report" if include_pb else "Content Pack-Out Report"
+    fname_parts = [report_label]
     if addr_slug:
         fname_parts.append(addr_slug)
     fname_parts.append(sid)

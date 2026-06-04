@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   Modal,
   Button,
@@ -286,6 +286,58 @@ const ReportExportModal: React.FC<ReportExportModalProps> = ({
 
   const [roomPhotos, setRoomPhotos] = useState<RoomPhotoState[]>(initialRoomPhotos);
 
+  // Load photos from photo_keys when base64 photos are missing (e.g. after session reload)
+  useEffect(() => {
+    if (mode !== 'content' || !photoRooms?.length) return;
+    let cancelled = false;
+
+    const loadMissing = async () => {
+      const updates: { index: number; photos: ReportRoomPhoto[] }[] = [];
+
+      for (let i = 0; i < photoRooms.length; i++) {
+        const pr = photoRooms[i];
+        const current = roomPhotos[i];
+        // Skip if already has photos or no photo_keys
+        if (current?.photos?.length > 0) continue;
+        const keys = pr.photo_keys ?? [];
+        if (keys.length === 0) continue;
+
+        try {
+          const base64List = await Promise.all(
+            keys.map((key) => packingApi.fetchPhotoBase64(key)),
+          );
+          const photos: ReportRoomPhoto[] = base64List
+            .filter((b64) => b64 && b64.length > 100)
+            .map((b64, idx) => ({
+              image: `data:image/jpeg;base64,${b64}`,
+              caption: `${pr.room_name} - Photo ${idx + 1}`,
+              is_damage: false,
+            }));
+          if (photos.length > 0) {
+            updates.push({ index: i, photos });
+          }
+        } catch {
+          // photo load failed — leave empty
+        }
+      }
+
+      if (!cancelled && updates.length > 0) {
+        setRoomPhotos((prev) => {
+          const next = [...prev];
+          for (const u of updates) {
+            if (next[u.index]) {
+              next[u.index] = { ...next[u.index], photos: u.photos };
+            }
+          }
+          return next;
+        });
+      }
+    };
+
+    loadMissing();
+    return () => { cancelled = true; };
+  }, [mode, photoRooms]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Additional options
   const [notes, setNotes] = useState('');
   const [includeSignature, setIncludeSignature] = useState(false);
@@ -407,9 +459,11 @@ const ReportExportModal: React.FC<ReportExportModalProps> = ({
       });
 
       const addr = clientInfo.property_address?.trim().replace(/[<>:"/\\|?*]+/g, '').replace(/\s+/g, ' ');
+      const hasPackback = result.include_packback ?? false;
+      const reportLabel = hasPackback ? 'Content Pack-Out Pack-Back Report' : 'Content Pack-Out Report';
       const filename = addr
-        ? `Pack_in_out Report - ${addr}.pdf`
-        : `Pack_in_out Report-${activeSessionId.slice(0, 8)}.pdf`;
+        ? `${reportLabel} - ${addr}.pdf`
+        : `${reportLabel}-${activeSessionId.slice(0, 8)}.pdf`;
 
       if (forSign && onRequestSign) {
         onRequestSign(blob, filename);
